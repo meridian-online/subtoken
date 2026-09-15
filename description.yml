@@ -185,15 +185,48 @@ docs:
 
     ## The SQL surface
 
-    Five functions, and `subtoken_embed` is the one you came for.
+    Seven functions, and `subtoken_embed` is the one you came for.
 
     | function | returns | what it is for |
     |---|---|---|
     | `subtoken_embed(text VARCHAR)` | `FLOAT[]` | the vector for one string |
     | `subtoken_is_truncated(text VARCHAR)` | `BOOLEAN` | whether `subtoken_embed(text)` had to drop content to fit |
     | `subtoken_version()` | `VARCHAR` | which build, which model, which vector width |
+    | `subtoken_model_id()` | `VARCHAR` | the model key on its own, to store beside a vector column |
+    | `subtoken_models()` | `STRUCT(model, backend, revision, width, input_limit, licence, tier, "key")` | the catalogue row for the model this build serves |
     | `subtoken_cache_stats()` | `STRUCT(hits, misses, encoded, uncached, entries, capacity)` | what the cache has been doing |
     | `subtoken_cache_clear()` | `BIGINT` | drop the cached vectors; returns how many |
+
+    ### Which model wrote a stored vector
+
+    Vectors from two models are not comparable, and a stored column will not tell you it has the wrong ones: the width is the same, the norm is the same, and the numbers are plausible. Upgrade the extension over a table you built last quarter and the only signal is that the answers drift.
+
+    `subtoken_model_id()` is the value that makes it answerable. It is the full 64-character key this build derives from its own tokenizer, weights and config — the same key `subtoken_version()` abbreviates to twelve characters inside its sentence, at full length and on its own, so it can be stored in a column and compared. Store it once, beside the vectors:
+
+    ```sql
+    CREATE TABLE corpus_vectors AS
+        SELECT id, subtoken_embed(description) AS v, subtoken_model_id() AS model_id
+        FROM corpus;
+    ```
+
+    Then any later session can refuse **before** it compares anything, in a predicate that reads no vector at all:
+
+    ```sql
+    -- Nothing to do: every row was written by the model now loaded.
+    SELECT count(*) AS written_by_another_model
+    FROM corpus_vectors
+    WHERE model_id <> subtoken_model_id();
+    ```
+
+    Because the key is derived from the asset bytes, it moves when the weights, the tokenizer or the config move, and it does not move when only this extension's own code changes — so a release that leaves the model alone leaves your stored ids valid.
+
+    `subtoken_models()` is the rest of the row: which model, which backend, at which revision, how wide its vectors are, how much text it reads, under what licence, and at what support tier.
+
+    ```sql
+    SELECT (subtoken_models()).model, (subtoken_models()).width, (subtoken_models()).input_limit;
+    ```
+
+    `key` is quoted in the type above because DuckDB quotes keywords when it prints a `STRUCT`; a field reference does not need the quotes, and `(subtoken_models()).key` returns the same string as `subtoken_model_id()`.
 
     ### NULL, and text with nothing in it
 

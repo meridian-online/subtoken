@@ -144,14 +144,46 @@ static PROBED: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
 /// Probes actually taken, so a test can see that the memo is doing its job.
 static PROBES_TAKEN: AtomicU64 = AtomicU64::new(0);
 
+/// The same count, kept per size.
+///
+/// The process-wide total cannot answer "was THIS size probed again", because
+/// every other size probed anywhere in the process moves it too — and `cargo
+/// test` runs the tests on several threads, so a test watching the total is
+/// watching every other test's first `embed` as well. That is not hypothetical:
+/// `the_probe_is_taken_once_per_size` failed with "the memo let 1 further
+/// probes through" for a size it was the only caller of, because the cache's
+/// own capacity search — one probe per candidate size it tries — ran on another
+/// thread inside its window.
+static PROBES_BY_SIZE: Mutex<Vec<(usize, u64)>> = Mutex::new(Vec::new());
+
 /// How many blocks have been allocated to measure a size class this process.
 pub fn probes_taken() -> u64 {
     PROBES_TAKEN.load(Ordering::Relaxed)
 }
 
+/// How many of those were probes of `size`.
+pub fn probes_taken_for(size: usize) -> u64 {
+    PROBES_BY_SIZE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .find(|(probed, _)| *probed == size)
+        .map(|(_, count)| *count)
+        .unwrap_or(0)
+}
+
 /// Probe the allocator for a block of `requested` bytes.
 fn measure_allocation(requested: usize) -> usize {
     PROBES_TAKEN.fetch_add(1, Ordering::Relaxed);
+    {
+        let mut by_size = PROBES_BY_SIZE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match by_size.iter_mut().find(|(size, _)| *size == requested) {
+            Some((_, count)) => *count += 1,
+            None => by_size.push((requested, 1)),
+        }
+    }
     // 16 is what `hashbrown` aligns its bucket array to and what the system
     // allocator returns anyway; both blocks go through plain `malloc` at this
     // alignment on the platforms probed.
@@ -692,15 +724,18 @@ mod tests {
         // A size nothing else in this binary asks for.
         let size = 1_234_576;
         let first = allocation_bytes(size);
-        let after_first = probes_taken();
         for _ in 0..50 {
             assert_eq!(allocation_bytes(size), first);
         }
+        // Per size, not the process-wide total: `cargo test` runs on several
+        // threads, and the total moves for every other test's first `embed`.
+        // Watching it here reported "the memo let 1 further probes through" for
+        // a size this test is the only caller of.
         assert_eq!(
-            probes_taken(),
-            after_first,
-            "the memo let {} further probes through",
-            probes_taken() - after_first
+            probes_taken_for(size),
+            1,
+            "51 calls for one size took {} probes",
+            probes_taken_for(size)
         );
     }
 

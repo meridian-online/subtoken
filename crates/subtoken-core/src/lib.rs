@@ -122,6 +122,70 @@ pub fn dim() -> Result<usize, String> {
     Ok(model::bundled()?.dim())
 }
 
+/// The bundled model's content address, as 64 lowercase hex characters.
+///
+/// This is the same value [`describe`] truncates to twelve characters for its
+/// one-line sentence, at full length and on its own. The truncation is fine for
+/// a human reading a version string and useless for a column: twelve characters
+/// inside a sentence have to be recovered with a regular expression before
+/// anything can join on them, and a session that wants to know whether two
+/// columns of vectors are comparable is doing exactly that — joining.
+///
+/// It is derived from the asset bytes rather than from a version number, so a
+/// build whose weights, tokenizer or config differ reports a different id even
+/// if nobody remembered to bump anything, and a build that only changes this
+/// extension's own code reports the same one.
+pub fn model_id() -> Result<String, String> {
+    Ok(model::bundled()?.key_hex())
+}
+
+/// One row of the model catalogue.
+///
+/// Everything a session needs in order to decide whether a stored column of
+/// vectors can be compared with a fresh one, and what the model that wrote them
+/// will accept — in fields, so SQL can read them, rather than in a sentence.
+pub struct ModelRow {
+    /// The upstream repository the assets came from.
+    pub model: &'static str,
+    /// The family of model, as [`model::MODEL_BACKEND`] documents it.
+    pub backend: &'static str,
+    /// The full pinned revision of `model`, not an abbreviation of it.
+    pub revision: &'static str,
+    /// Floats in every vector this model returns — the width of the column a
+    /// caller is about to create.
+    pub width: u64,
+    /// The most tokens of a text that reach the mean. Past this,
+    /// [`is_truncated`] answers true and the vector is built from a prefix.
+    pub input_limit: u64,
+    /// The licence the upstream release declares.
+    pub licence: &'static str,
+    /// What a caller may expect of this model in this build.
+    pub tier: &'static str,
+    /// The same string [`model_id`] returns, so a stored id can be joined
+    /// against the catalogue rather than compared to a function call.
+    pub key: String,
+}
+
+/// The catalogue row for the model this build serves.
+///
+/// Each field is read from the loaded model or from the constant that governs
+/// it, never restated: `width` is the width the encoder actually produces and
+/// `key` is the loaded model's own key, so a row that has drifted from the
+/// binary is a row that cannot be built.
+pub fn catalogue() -> Result<ModelRow, String> {
+    let model = model::bundled()?;
+    Ok(ModelRow {
+        model: model::MODEL_ID,
+        backend: model::MODEL_BACKEND,
+        revision: model::MODEL_REVISION,
+        width: model.dim() as u64,
+        input_limit: model::MAX_TOKENS as u64,
+        licence: model::MODEL_LICENCE,
+        tier: model::MODEL_TIER,
+        key: model.key_hex(),
+    })
+}
+
 /// Whether [`embed`] discarded content of `text`: it pooled fewer ids than the
 /// whole of `text` would have given it, so the vector it returns does not
 /// reflect all of `text`.
@@ -243,7 +307,14 @@ mod tests {
     use super::*;
 
     /// The cache and the counters are process-global, so the tests that read
-    /// them run one at a time.
+    /// them — **or move them**, which is any test that reaches `embed`,
+    /// `embed_uncached`, `stats` or `clear_cache` — run one at a time.
+    ///
+    /// The second half was added after a test that only *moved* `ENCODED`, by
+    /// embedding one string it never counted, was written without this guard
+    /// and failed three other tests by turns. A test that does not read a
+    /// counter still has to hold the lock, because the window it lands in
+    /// belongs to a test that does.
     static SERIAL: Mutex<()> = Mutex::new(());
 
     fn serial() -> MutexGuard<'static, ()> {
@@ -401,6 +472,68 @@ mod tests {
         assert!(
             text.contains(&format!("dim {}", dim().expect("dim"))),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn the_model_id_is_the_whole_key_the_version_sentence_abbreviates() {
+        let id = model_id().expect("model_id");
+        assert_eq!(id.len(), 64, "{id}");
+        assert!(
+            id.chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+            "not lowercase hex: {id}"
+        );
+        // The sentence carries the first twelve characters and nothing longer,
+        // which is the whole reason this function exists.
+        assert!(describe().contains(&id[..12]), "{}", describe());
+        assert!(!describe().contains(&id[..13]), "{}", describe());
+    }
+
+    /// The catalogue's `width` and `input_limit` are asserted against what the
+    /// model *does*, not against the constants they are read from. A row that
+    /// restated `dim()` would pass a test that also restated it; this one
+    /// embeds a string and counts the floats, and finds the truncation boundary
+    /// by asking `is_truncated` either side of it.
+    ///
+    /// It takes `serial()` for the `embed` below, which is the whole reason the
+    /// guard exists: `ENCODED` is process-global, and one extra encode landing
+    /// inside another test's counting window is a failure with this test's name
+    /// nowhere in it. Without the guard here, three different counter-reading
+    /// tests were seen to fail — `repeating_a_value_does_not_re_embed_it`,
+    /// `clearing_the_cache_drops_the_entries_and_the_counters` and
+    /// `eight_threads_over_ten_values_encode_ten_times` — each `left: 3, right:
+    /// 2`, whichever one the scheduler put in the way.
+    #[test]
+    fn the_catalogue_row_describes_the_model_that_is_loaded() {
+        let _guard = serial();
+        let row = catalogue().expect("catalogue");
+
+        assert_eq!(row.model, model::MODEL_ID);
+        assert_eq!(row.backend, "model2vec");
+        assert_eq!(row.revision.len(), 40, "the revision is the full SHA-1");
+        assert_eq!(row.revision, model::MODEL_REVISION);
+        assert_eq!(row.licence, "MIT");
+        assert_eq!(row.tier, "supported");
+
+        assert_eq!(row.key, model_id().expect("model_id"));
+
+        let vector = embed("a manufacturer of industrial fasteners").expect("embed");
+        assert_eq!(row.width as usize, vector.len());
+
+        // `ok ` is one token in this vocabulary and three characters, so a
+        // probe built from it stays far under the character cut and pins the
+        // token cut alone — the same reason test/sql/10 uses it.
+        let limit = row.input_limit as usize;
+        let at_limit = format!("{}marker", "ok ".repeat(limit - 1));
+        let past_limit = format!("{}marker", "ok ".repeat(limit));
+        assert!(
+            !is_truncated(&at_limit).expect("is_truncated"),
+            "input_limit {limit} claims more room than the model gives"
+        );
+        assert!(
+            is_truncated(&past_limit).expect("is_truncated"),
+            "input_limit {limit} claims less room than the model gives"
         );
     }
 
