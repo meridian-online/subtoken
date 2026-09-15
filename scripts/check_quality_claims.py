@@ -168,8 +168,15 @@ SECTION_HEADING = "What it is good at, and what it is not"
 #: `FIGURES` were published. A tripwire, not a proof — see WHAT IS NOT ASSERTED.
 MEASURED_ON_REVISION = "bf8b056651a2c21b8d2565580b8569da283cab23"
 
-FINETYPE_EVAL = "finetype eval/static-embedding-map-fidelity/results.json"
-SWIFTEMBED = "SwiftEmbed, arxiv.org/abs/2510.24793"
+#: The finetype commit `results.json` was generated at. Every figure below is
+#: read from that file at that commit, and the self-test holds FIGURES to it:
+#: a figure sourced anywhere else is a figure nobody in this estate measured,
+#: which is what the SwiftEmbed citations this page used to carry were.
+MEASURED_AT_COMMIT = "196d102a"
+
+FINETYPE_EVAL = (
+    f"finetype eval/static-embedding-map-fidelity/results.json at {MEASURED_AT_COMMIT}"
+)
 
 #: The three corpora, in the order the summary table's columns run and in the
 #: order the prose lists them. Assertion 5 reads the table against this, so a
@@ -197,8 +204,10 @@ class Figure:
 #: is not here reddens, so a new claim cannot reach the registry page without
 #: someone writing down what it measures and who measured it.
 FIGURES: list[Figure] = [
-    # Ours. potion-base-8M against all-MiniLM-L6-v2, seed 42, 20 nearest
-    # neighbours, UMAP(metric="cosine", n_neighbors=15, random_state=42).
+    # potion-base-8M against all-MiniLM-L6-v2, seed 42, 20 nearest neighbours,
+    # UMAP(metric="cosine", n_neighbors=15, random_state=42), k=10 for ranked
+    # retrieval. `bm25` is DuckDB's own `fts` extension over the same corpora
+    # with no model loaded: the floor a reader has before installing this one.
     Figure(
         0.13185,
         "kNN overlap with MiniLM's map, long-form prose",
@@ -241,6 +250,58 @@ FIGURES: list[Figure] = [
         series="region retention",
         corpus="very short strings",
     ),
+    Figure(
+        0.76335,
+        "ranked lift over the random control, potion-base-8M, long-form prose",
+        FINETYPE_EVAL,
+        series="ranked lift",
+        corpus="long-form prose",
+    ),
+    Figure(
+        0.85301,
+        "ranked lift over the random control, potion-base-8M, short text",
+        FINETYPE_EVAL,
+        series="ranked lift",
+        corpus="short text",
+    ),
+    Figure(
+        0.88271,
+        "ranked lift over the random control, potion-base-8M, very short strings",
+        FINETYPE_EVAL,
+        series="ranked lift",
+        corpus="very short strings",
+    ),
+    Figure(
+        0.74618,
+        "ranked lift over the random control, BM25 with no model, long-form prose",
+        FINETYPE_EVAL,
+        series="bm25 lift",
+        corpus="long-form prose",
+    ),
+    Figure(
+        0.69389,
+        "ranked lift over the random control, BM25 with no model, short text",
+        FINETYPE_EVAL,
+        series="bm25 lift",
+        corpus="short text",
+    ),
+    Figure(
+        0.58767,
+        "ranked lift over the random control, BM25 with no model, very short strings",
+        FINETYPE_EVAL,
+        series="bm25 lift",
+        corpus="very short strings",
+    ),
+    # Pairwise, pooled under one global threshold, on the column-name corpus.
+    # Registered for that corpus alone because it is the one the pages publish:
+    # near-duplicate AP is above 0.99 on both prose corpora for the model and
+    # for BM25 alike, so quoting it there would read as a strength nothing in
+    # the run distinguishes.
+    Figure(0.91133, "pairwise near-duplicate AP, potion-base-8M, very short strings", FINETYPE_EVAL),
+    Figure(0.72620, "pairwise near-duplicate AP, BM25 with no model, very short strings", FINETYPE_EVAL),
+    Figure(0.68615, "pairwise same-class AP, potion-base-8M, very short strings", FINETYPE_EVAL),
+    Figure(0.68151, "pairwise same-class AP, all-MiniLM-L6-v2, very short strings", FINETYPE_EVAL),
+    Figure(0.5, "the floor pooled AP sits at: one positive and one negative pair per anchor", FINETYPE_EVAL),
     Figure(0.39244, "potion-base-8M AMI over raw vectors, very short strings", FINETYPE_EVAL),
     Figure(0.35104, "all-MiniLM-L6-v2 AMI over raw vectors, very short strings", FINETYPE_EVAL),
     # Two entries for one value on purpose: the long-form and short-text corpora
@@ -269,19 +330,14 @@ FIGURES: list[Figure] = [
     ),
     Figure(12, "classes in the column-name corpus", FINETYPE_EVAL),
     Figure(20, "nearest neighbours compared; also the 20 Newsgroups corpus name", FINETYPE_EVAL),
-    # Not ours. Published figures for the same model family, cited as such, and
-    # measured against Sentence-BERT rather than against all-MiniLM-L6-v2.
-    Figure(0.901, "average precision on SprintDuplicateQuestions, potion-base-8M", SWIFTEMBED),
-    Figure(0.847, "average precision on SprintDuplicateQuestions, Sentence-BERT", SWIFTEMBED),
-    Figure(0.89, "low end of similarity and deduplication scores, as a share of SBERT", SWIFTEMBED),
-    Figure(1.0, "high end of similarity and deduplication scores, as a share of SBERT", SWIFTEMBED),
-    Figure(0.75, "classification, as a share of SBERT", SWIFTEMBED),
 ]
 
 #: Assertion 5. Summary-table row label → the series its cells are figures of.
 #: The `corpus` row is prose rather than numbers and is pinned in `CLAIMS`.
 TABLE_ROWS: dict[str, str] = {
     "rows": "corpus size",
+    "ranked lift, this model": "ranked lift",
+    "ranked lift, BM25 with no model": "bm25 lift",
     "nearest neighbours that survive": "kNN overlap",
     "region structure kept": "region retention",
 }
@@ -291,7 +347,12 @@ TABLE_ROWS: dict[str, str] = {
 #: told a reader with one-line descriptions they were at the good end when the
 #: cited metric puts them at the worst. `corpus size` is left out: nobody claims
 #: a direction over sample sizes, and requiring all three would redden the
-#: sentence that says 216 rows is a small sample.
+#: sentence that says 216 rows is a small sample. `ranked lift` and `bm25 lift`
+#: are left out for a different reason: both run monotonically with the shape of
+#: the text — 0.763, 0.853, 0.883 and 0.746, 0.694, 0.588 — so a sentence
+#: quoting one corpus's pair states no direction it has to walk back, and the
+#: per-corpus sentences the page carries are each one such pair. Their cells are
+#: still read one at a time by assertion 5, through TABLE_ROWS.
 DIRECTIONAL_SERIES: tuple[str, ...] = ("kNN overlap", "region retention")
 
 #: Assertion 4. Each pins a figure to what it is a figure of, or pins a
@@ -304,10 +365,13 @@ CLAIMS: list[str] = [
     "pairwise judgement",
     "ranked retrieval",
     "a false duplicate, which is a pairwise failure and not a ranked-retrieval one",
-    # AC3: what it is good at, each with its figure.
-    "90.1% average precision on SprintDuplicateQuestions where Sentence-BERT reports 84.7%",
-    "89% to 100% of Sentence-BERT",
-    "classification at about 75% of Sentence-BERT",
+    # What it is good at, each with its figure. Pairwise duplicate scoring is
+    # the strongest thing this run measured and is our own, which the SwiftEmbed
+    # citations these three replaced were not: they were another serving
+    # system's numbers on another benchmark, read as this extension's.
+    "0.9113 for the bundled model, against 0.7262 for BM25 on the same 216 rows",
+    "floor is 0.5",
+    "0.6862 for the bundled model and 0.6815",
     "216 column names in 12 semantic classes",
     "0.3924 against 0.3510",
     # AC1: the figures that replaced "most" and "a minority".
@@ -319,6 +383,15 @@ CLAIMS: list[str] = [
     # fact that region structure does not follow it.
     "worst on long prose and mildest on very short strings",
     "13%, then 28%, then 40% as the text gets shorter",
+    # The free floor, per corpus. Each of these three sentences carries its
+    # corpus and its row count, because a lift figure without them says nothing
+    # about which shape of text it was measured on — and the long-prose pair is
+    # the one a reader most needs, since it is where the model barely clears a
+    # BM25 index the engine already ships.
+    "ranked lift is 0.763 for the bundled model and 0.746 for BM25 on the same rows",
+    "over their 3,000 subject lines it is 0.853 for the model against 0.694 for BM25",
+    "over the 216 column names it is 0.883 against 0.588",
+    "a bundled model that does not beat it has not earned its download",
     # The region sentence, tied to its corpora rather than to its conclusion.
     # Its trailing clause survives the first two figures being transposed, and
     # a transposed pair passes assertions 2, 3, 5 and 6 untouched: both values
@@ -693,8 +766,9 @@ def universal_problems(name: str, section_text: str) -> list[str]:
         problems.append(
             f"{name}'s section writes the universal {match.group(1)!r} in: …{context}…  A "
             f"universal asserts one property over a whole set, and this section deliberately "
-            f"mixes our measurement with a third party's and figures that compare nothing, so a "
-            f"blanket sentence cancels the per-item sourcing the rest of it does. Rewrite it as "
+            f"mixes figures measured against MiniLM, figures measured against a no-model BM25 "
+            f"floor and figures that compare nothing, so a blanket sentence cancels the "
+            f"per-item sourcing the rest of it does. Rewrite it as "
             f"a bounded claim, or add it to ALLOWED_UNIVERSALS with why it holds"
         )
     return problems
@@ -1022,6 +1096,30 @@ def self_test() -> int:  # noqa: C901
                 )
                 return 1
 
+    # Where the figures come from. The three this page used to carry that were
+    # not ours read as this extension's strength and were another serving
+    # system's, on another benchmark, against another baseline. What stops the
+    # next one is not vigilance: it is that a Figure's source has to be the one
+    # committed file, at the one commit, and anything else is a self-test
+    # failure before the pages are read at all.
+    if MEASURED_AT_COMMIT not in FINETYPE_EVAL:
+        print(
+            f"self-test FAILED: FINETYPE_EVAL is {FINETYPE_EVAL!r} and does not name the "
+            f"commit {MEASURED_AT_COMMIT!r} the figures were generated at. A source that names "
+            "a file but not a revision cannot be re-read: the file moves and the figure stays",
+            file=sys.stderr,
+        )
+        return 1
+    foreign = sorted({figure.source for figure in FIGURES if figure.source != FINETYPE_EVAL})
+    if foreign:
+        print(
+            f"self-test FAILED: FIGURES carries {len(foreign)} source(s) that are not "
+            f"{FINETYPE_EVAL!r}: {foreign}. A figure this estate did not measure is a figure "
+            "nobody here can re-run, and the page presents it in the same voice as one we did",
+            file=sys.stderr,
+        )
+        return 1
+
     # The quantity parser: what it must see, and what it must not.
     seen = {written for _, _, written in quantities("13% and 0.3924 and 3,000 rows and 216 names")}
     if seen != {"13%", "0.3924", "3,000", "216"}:
@@ -1040,7 +1138,10 @@ def self_test() -> int:  # noqa: C901
                 f"self-test FAILED: {identifier} was read as a quantity: {found}", file=sys.stderr
             )
             return 1
-    if quantities("[SwiftEmbed](https://arxiv.org/abs/2510.24793)"):
+    # A link whose target carries a bare number. Without LINK_TARGET stripping,
+    # `1234.56789` is read as a quantity, reported unregistered, and the pages
+    # cannot cite a source that has a number in its address.
+    if quantities("[the committed results](https://example.invalid/abs/1234.56789)"):
         print("self-test FAILED: a link target was read as a quantity", file=sys.stderr)
         return 1
 
@@ -1118,6 +1219,8 @@ def self_test() -> int:  # noqa: C901
         "|---|---|---|---|\n"
         "| corpus | 20 Newsgroups posts | their subject lines | column names |\n"
         "| rows | 3,000 | 3,000 | 216 |\n"
+        "| ranked lift, this model | 0.763 | 0.853 | 0.883 |\n"
+        "| ranked lift, BM25 with no model | 0.746 | 0.694 | 0.588 |\n"
         "| nearest neighbours that survive | 13% | 28% | 40% |\n"
         "| region structure kept | 71% | 67% | 88% |\n"
     )
@@ -1321,7 +1424,7 @@ def self_test() -> int:  # noqa: C901
     # A section built from the claims themselves, then broken one way at a time.
     good = (
         " ".join(CLAIMS)
-        + " 3,000 rows, 20 Newsgroups, 90.1%, 84.7%, 89% to 100%, 20.\n"
+        + " 3,000 rows, 20 Newsgroups, 20 nearest neighbours, 0.3924 against 0.3510.\n"
         + good_table
         + "\nany phrase and its shuffle land in the same place.\n"
     )

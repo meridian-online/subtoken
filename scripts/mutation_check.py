@@ -698,7 +698,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_readme_asserts_a_universal_over_the_mixed_sourcing",
         file="README.md",
-        old="and where they compare, the comparison is the bundled",
+        old="and where a figure compares, it compares the bundled",
         new="and every figure below compares the bundled",
         kind="script",
         command=QUALITY_CLAIMS,
@@ -914,10 +914,56 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="a_speed_figure_lands_in_the_registry_blurb",
         file="description.yml",
-        old="with no API key and no network call",
-        new="with no API key, no network call and 397x lower latency",
+        old="no network, no key and no bill",
+        new="no network, no key, no bill and 397x lower latency",
         kind="script",
         command=QUALITY_CLAIMS,
+    ),
+    # The BM25 floor is the figure that changes what a reader does: on long
+    # prose the bundled model clears DuckDB's own `fts` by 0.017 of lift, so a
+    # page that quotes the model's number and drops the floor's is telling a
+    # reader the download is worth more than the run says it is. Dropping the
+    # floor leaves a true sentence behind, which is why a pin and not a scan
+    # catches it.
+    Mutation(
+        name="the_registry_entry_drops_the_bm25_floor_from_a_corpus",
+        file="description.yml",
+        old="is 0.853 for the model against 0.694 for BM25",
+        new="is 0.853 for the model",
+        kind="script",
+        command=QUALITY_CLAIMS,
+    ),
+    # And the two lift rows read as one another: both rows stay registered
+    # figures and the page's set of quantities is unchanged, so only reading
+    # each cell by its row's series and its column's corpus sees it.
+    Mutation(
+        name="the_readme_reads_the_bm25_row_as_the_models",
+        file="README.md",
+        old="| ranked lift, this model | 0.763 | 0.853 | 0.883 |",
+        new="| ranked lift, this model | 0.746 | 0.694 | 0.588 |",
+        kind="script",
+        command=QUALITY_CLAIMS,
+    ),
+    # Where a figure came from. The pages carried three figures from another
+    # serving system on another benchmark, in the same voice as the measured
+    # ones; FIGURES now has to name one committed file at one commit, and these
+    # two are the halves of that going quiet — a source that names no revision,
+    # and a source that is not this estate's at all.
+    Mutation(
+        name="the_figure_source_stops_naming_the_commit_it_was_read_at",
+        file="scripts/check_quality_claims.py",
+        old='    f"finetype eval/static-embedding-map-fidelity/results.json at {MEASURED_AT_COMMIT}"',
+        new='    "finetype eval/static-embedding-map-fidelity/results.json"',
+        kind="script",
+        command=QUALITY_CLAIMS_SELF_TEST,
+    ),
+    Mutation(
+        name="a_figure_nobody_here_measured_is_registered_again",
+        file="scripts/check_quality_claims.py",
+        old='    Figure(0.91133, "pairwise near-duplicate AP, potion-base-8M, very short strings", FINETYPE_EVAL),',
+        new='    Figure(0.91133, "pairwise near-duplicate AP, potion-base-8M, very short strings", "another paper"),',
+        kind="script",
+        command=QUALITY_CLAIMS_SELF_TEST,
     ),
     # ── the engine's public behaviour ────────────────────────────────────────
     # Not "the first lookup is skipped": that is a fast path, and `recheck`

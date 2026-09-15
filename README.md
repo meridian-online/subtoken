@@ -1,8 +1,12 @@
 # subtoken
 
-A DuckDB scalar function that turns a string into a vector, using a static embedding model bundled in the extension binary. No API key, no network call, no per-row bill.
+Text becomes tokens, tokens become vectors. Inside DuckDB, with no network, no key and no bill.
+
+The model is a static embedding model compiled into the extension binary, so a query embeds a column with no stops along the way — nothing to configure, nothing to fetch, nothing to meter.
 
 ```sql
+-- Not published to the community registry yet; *Status* below says what to run
+-- in the meantime.
 INSTALL subtoken FROM community;
 LOAD subtoken;
 
@@ -20,21 +24,25 @@ Being a scalar is the point. It composes with `WHERE` and `LIMIT`, so you can em
 
 ## What it is good at, and what it is not
 
-**It is not a drop-in replacement for a hosted transformer, and the difference is measured rather than hedged.** A static embedding is the mean of its token vectors with no contextual attention, and what that costs is specific rather than general. Our own figures come from the harness, corpora and committed results in `eval/static-embedding-map-fidelity/` in [meridian-online/finetype](https://github.com/meridian-online/finetype), and where they compare, the comparison is the bundled `potion-base-8M` against `all-MiniLM-L6-v2`. The figures that are not ours name whose they are, and what they were measured against, in the sentence that carries them — a different model, on a different benchmark.
+**It is not a drop-in replacement for a hosted transformer, and the difference is measured rather than hedged.** A static embedding is the mean of its token vectors with no contextual attention, and what that costs is specific rather than general. The figures in this section come from the harness, corpora and committed `results.json` in `eval/static-embedding-map-fidelity/` in [meridian-online/finetype](https://github.com/meridian-online/finetype), read at the commit `scripts/check_quality_claims.py` pins, and where a figure compares, it compares the bundled `potion-base-8M` against `all-MiniLM-L6-v2`.
+
+**There is a free floor under this, and it was measured beside the model.** DuckDB's `fts` extension scores BM25 over the same corpora with no model loaded, which is the result a reader already has; a bundled model that does not beat it has not earned its download. The ranked-lift figures below are normalised so that a random-vector control scores zero and `all-MiniLM-L6-v2` scores one on the same corpus.
 
 **Two different questions live under "similarity", and this embedder answers them differently.** *Pairwise judgement* asks how alike two given strings are — is A a duplicate of B. *Ranked retrieval* asks a whole corpus for the rows most like A. The neighbourhood figures under *What it is not for* are ranked retrieval, and they are the weak result on this page; the duplicate-detection figures under *What it is good at* are pairwise, and they point the other way. Word-order blindness is a failure of both — a phrase and its shuffle are false neighbours *and* a false duplicate.
 
 ### What it is good at
 
-**Pairwise similarity and duplicate scoring.** [SwiftEmbed](https://arxiv.org/abs/2510.24793), built on this same `potion-base-8M`, reports 90.1% average precision on SprintDuplicateQuestions where Sentence-BERT reports 84.7% — ahead of it, not merely close — and 89% to 100% of Sentence-BERT across its similarity and deduplication tasks. Those are their published figures rather than our measurement.
+**Pairwise duplicate scoring, which is the strongest result in the run.** Over the 216 column names in 12 semantic classes, pooled average precision at telling a near-duplicate of a string from an unrelated string is 0.9113 for the bundled model, against 0.7262 for BM25 on the same 216 rows, on a scale whose floor is 0.5 because the pool holds one positive and one negative pair per anchor. Telling apart two strings that merely share a class is the harder question, and there the same corpus gives 0.6862 for the bundled model and 0.6815 for `all-MiniLM-L6-v2`.
 
-**Coarse classification and tagging.** The same work puts classification at about 75% of Sentence-BERT. On the shortest text we measured ourselves that gap closes and reverses: over 216 column names in 12 semantic classes, clustering the raw static vectors recovers more of the label structure than clustering MiniLM's — 0.3924 against 0.3510 by adjusted mutual information, which is how much knowing the clusters tells you about the labels. Read that one as indicative rather than settled, because 216 rows is a small sample; it is also the shape of text a database column usually holds.
+**Coarse classification and tagging.** Over those same 216 column names in 12 semantic classes, clustering the raw static vectors recovers more of the label structure than clustering MiniLM's — 0.3924 against 0.3510 by adjusted mutual information, which is how much knowing the clusters tells you about the labels. Read that one as indicative rather than settled, because 216 rows is a small sample; it is also the shape of text a database column usually holds.
 
 **Reading a corpus as regions.** Project these vectors down to two dimensions and the groups you see still line up with the corpus's own labels: 71% of what MiniLM's map recovers on long-form prose, 67% on short text, 88% on very short strings. That is measured against a random-vector control rather than against nothing, so it is a share of the structure a real embedder finds and a fake one does not.
 
 ### What it is not for
 
 **Ranked nearest-neighbour lookup — "show me the rows most like this one".** Take a point's 20 nearest neighbours in a map built from these vectors, and the same point's in a map built from MiniLM's: 13% are the same rows on long-form prose, 28% on short text, 40% on very short strings. The regions agree and the neighbourhoods do not. There is deliberately no similarity or nearest-neighbour function in this extension, and this is the reason.
+
+**And a BM25 index you already have scores about as well on long prose.** Over 3,000 posts from 20 Newsgroups, ranked lift is 0.763 for the bundled model and 0.746 for BM25 on the same rows. Over their 3,000 subject lines it is 0.853 for the model against 0.694 for BM25. Over the 216 column names it is 0.883 against 0.588. The shorter and more name-like the text, the more the model is worth; on long-form prose the gap is narrow enough that bundling weights is hard to argue for over the `fts` extension DuckDB already ships.
 
 **And the neighbourhood penalty depends on the shape of your text, in the opposite direction to the usual guess.** It is worst on long prose and mildest on very short strings — 13%, then 28%, then 40% as the text gets shorter. The more context a text carries, the more is lost by not attending to it. So a column of names, codes or identifiers is at the good end for neighbourhoods, and a column of paragraphs is at the bad end.
 
@@ -44,12 +52,14 @@ Being a scalar is the point. It composes with `WHERE` and `LIMIT`, so you can em
 |---|---|---|---|
 | corpus | 20 Newsgroups posts | their subject lines | column names |
 | rows | 3,000 | 3,000 | 216 |
+| ranked lift, this model | 0.763 | 0.853 | 0.883 |
+| ranked lift, BM25 with no model | 0.746 | 0.694 | 0.588 |
 | nearest neighbours that survive | 13% | 28% | 40% |
 | region structure kept | 71% | 67% | 88% |
 
 **It also does not read word order.** A Model2Vec vector is the mean of its token vectors, so `subtoken_embed('valve bodies')` and `subtoken_embed('bodies valve')` are the same vector — a false duplicate, which is a pairwise failure and not a ranked-retrieval one. Repetition does count — a word twice pulls the mean toward it — but any phrase and its shuffle land in the same place.
 
-Our figures were measured with the harness in `eval/static-embedding-map-fidelity/` against `potion-base-8M` as Hugging Face served it at the time; that harness downloads the model by name and records no revision, so the tie between these figures and the weights in this binary is asserted here rather than recorded there. What is enforced is narrower, and worth having: vectors from two model versions are not comparable, so `scripts/check_quality_claims.py` reddens when the bundled revision moves off the one in [`models/potion-base-8M/SOURCE.md`](models/potion-base-8M/SOURCE.md) that these figures were published against, which forces a re-run or a deliberate re-blessing instead of a quiet drift. It holds this section and `description.yml`'s copy of it to the same figures at the same time.
+Our figures were measured with the harness in `eval/static-embedding-map-fidelity/` against `potion-base-8M` as Hugging Face served it at the time; that harness names the model rather than recording a revision, so the tie between these figures and the weights in this binary is asserted here rather than recorded there. What is enforced is narrower, and worth having: vectors from two model versions are not comparable, so `scripts/check_quality_claims.py` registers the figures above against finetype's committed `results.json` at `196d102a`, and reddens when the bundled revision moves off the one in [`models/potion-base-8M/SOURCE.md`](models/potion-base-8M/SOURCE.md) that these figures were published against, which forces a re-run or a deliberate re-blessing instead of a quiet drift. It holds this section and `description.yml`'s copy of it to the same figures at the same time.
 
 ## The SQL surface
 
@@ -79,13 +89,29 @@ CREATE TABLE corpus_vectors AS
     FROM corpus;
 ```
 
-Then any later session can refuse **before** it compares anything, in a predicate that reads no vector at all:
+One datum per column: the vector in one, the id of the model that wrote it in the next. Any later session can then refuse **before** it compares anything, in a predicate that reads no vector at all:
 
 ```sql
--- Nothing to do: every row was written by the model now loaded.
+-- Nothing to do: every row here was written by the model now loaded.
 SELECT count(*) AS written_by_another_model
 FROM corpus_vectors
 WHERE model_id <> subtoken_model_id();
+```
+
+Take a row from a build carrying different weights, and the refusal is what you get instead of a plausible answer:
+
+```sql
+INSERT INTO corpus_vectors
+VALUES (5, subtoken_embed('a supplier of hydraulic seals'), 'written-by-another-build');
+
+-- Row 5 comes back NULL: the comparison is not attempted, because the id beside
+-- its vector is not this build's.
+SELECT id,
+       CASE WHEN model_id = subtoken_model_id()
+            THEN v = subtoken_embed('a foundry casting valve bodies')
+       END AS is_the_same_text
+FROM corpus_vectors
+ORDER BY id;
 ```
 
 Because the key is derived from the asset bytes, it moves when the weights, the tokenizer or the config move, and it does not move when only this extension's own code changes — so a release that leaves the model alone leaves your stored ids valid.
@@ -186,6 +212,8 @@ Early. The extension builds, loads and answers queries; nothing is published to 
 ## The model
 
 `minishlab/potion-base-8M`, a Model2Vec static embedding model, taken from its published release at a pinned revision and compiled into the binary. Its files, their checksums and the revision they came from are in [`models/potion-base-8M/SOURCE.md`](models/potion-base-8M/SOURCE.md), and a test recomputes those checksums so a swapped asset reddens rather than shipping. The quality position above was measured on this model; a different one would need the measurement redone.
+
+That file also records why this model and not a larger one from the same family. The same run measured `potion-base-32M` and `potion-retrieval-32M`, which score better than this one on some of the figures above and worse on others; what decided the bundle is that their weights file is over four times the size of this one, on an artifact that is already among the largest the community registry serves.
 
 ## Licence
 

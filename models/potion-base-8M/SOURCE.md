@@ -26,3 +26,27 @@ Three files are bundled — the weights, the tokenizer, and the config. The conf
 | `config.json` | `etag: 7df26884a1aaaefbd7a30b37c32a25477cfb4c0e` (git blob) | `git hash-object config.json` |
 
 All three matched on 2026-08-24. This is not in the test suite because it needs the network, and the point of the bundle is that nothing at build or run time does.
+
+## Why this model, and not one of the two 32M candidates
+
+The map-fidelity run in [meridian-online/finetype](https://github.com/meridian-online/finetype) — `eval/static-embedding-map-fidelity/`, at commit `196d102a` — measured four Model2Vec arms against `all-MiniLM-L6-v2` and against two floors, a random-vector control and DuckDB's `fts` extension scoring BM25 with no model loaded. Two of those arms are candidates that could have been bundled here instead: `minishlab/potion-base-32M`, and `minishlab/potion-retrieval-32M`, which is the same base fine-tuned on a retrieval objective.
+
+**The measurement did not hand either of them the decision, because they split.** On the 216-row column-name corpus — the shape of text closest to what a database column holds — the two candidates disagree three ways, and the disagreement runs straight down the task the reader cares about:
+
+| figure, column-name corpus, 216 rows | `potion-base-32M` | `potion-retrieval-32M` | which it picks |
+|---|---|---|---|
+| ranked lift over the random control | 0.9033 | 0.9202 | retrieval-32M |
+| region structure kept, against MiniLM's map | 0.8865 | 0.8296 | base-32M |
+| pairwise near-duplicate average precision | 0.9200 | 0.9024 | base-32M |
+
+The bundled `potion-base-8M` is behind both candidates on those three — 0.8827, 0.8750 and 0.9113 — and the whole ladder from it to `potion-retrieval-32M` moves ranked lift on this corpus by 0.0375. The page publishes the pairwise and region figures as well as the ranked one, so on the task order this repository publishes, `potion-base-32M` is the better of the two candidates and `potion-retrieval-32M` is the better one for ranked retrieval alone, which this extension deliberately does not serve.
+
+**What decided it is the size of the download, and that is not close.** The bundled `model.safetensors` is 30,236,760 bytes. The same file is 129,210,456 bytes for both 32M candidates — 4.27 times larger — so bundling either would take the weights alone from 30.2 MB to 129.2 MB. For comparison, the largest artifact the DuckDB community registry serves for v1.5.5 on `osx_arm64` is `ldbc_data_gen` at 37,608,828 bytes, and the next below it is `pic2vec` at 27,443,851 bytes. This extension packaged and gzipped is 30,410,741 bytes, which already sits between those two; a 32M model would put it at more than three times the largest thing the registry carries, in exchange for 0.0375 of ranked lift on the corpus this extension is most used on.
+
+**How and when those sizes were read.** On 2026-09-15.
+
+- The packaged artifact: `gzip -c build/subtoken.duckdb_extension | wc -c` over a local release build, 30,410,741 bytes (30,399,166 at `gzip -9`).
+- The registry artifacts: the `Content-Length` of a `HEAD` request to `https://community-extensions.duckdb.org/v1.5.5/osx_arm64/<name>.duckdb_extension.gz`, for the 339 extension directories in `duckdb/community-extensions`, of which 263 answered 200 for that version and platform.
+- The model weights: the `Content-Length` of a `HEAD` request, following redirects, to `https://huggingface.co/minishlab/<model>/resolve/main/model.safetensors`.
+
+None of the three is in the test suite, for the same reason as the checksum table above: they need the network, and the point of the bundle is that neither the build nor a query does.
