@@ -16,7 +16,7 @@ SELECT must('the extension registers five functions',
 
 SELECT must('and they are exactly the documented five',
     (SELECT list_sort(list(function_name)) FROM registered)
-    = ['subtoken_embed', 'subtoken_is_truncated', 'subtoken_cache_clear', 'subtoken_cache_stats', 'subtoken_version']);
+    = ['subtoken_cache_clear', 'subtoken_cache_stats', 'subtoken_embed', 'subtoken_is_truncated', 'subtoken_version']);
 
 -- No nearest-neighbour lookup, deliberately. The measured position of this
 -- model is that a map built from its vectors keeps the cluster structure and
