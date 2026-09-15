@@ -1133,6 +1133,18 @@ MUTATIONS: list[Mutation] = [
         expect_red="11_a_stored_vector",
         kind="sql",
     ),
+    # AC1 names the domain the key is derived under, so it is pinned too. The
+    # domain is what stops the key being confused with a plain SHA-256 of any
+    # one asset, and moving it moves every stored id — which is exactly why a
+    # build that changed it silently would be the worst kind of release.
+    Mutation(
+        name="the_key_domain_moves_without_the_id_moving",
+        file=f"{CORE}/model.rs",
+        old='const MODEL_KEY_DOMAIN: &[u8] = b"subtoken/model-key/v1";',
+        new='const MODEL_KEY_DOMAIN: &[u8] = b"subtoken/model-key/v2";',
+        expect_red="11_a_stored_vector",
+        kind="sql",
+    ),
     Mutation(
         name="a_changed_weights_asset_leaves_the_id_where_it_was",
         file=f"{CORE}/model.rs",
