@@ -5,11 +5,9 @@
 ## repository at `repo.ref` for every platform in the matrix and publish the
 ## binaries, after which `INSTALL subtoken FROM community` works for anyone.
 ##
-## `repo.ref` MUST BE REPOINTED before this is submitted. It has to name a commit
-## that carries the build contract in `Makefile` and the `extension-ci-tools`
-## submodule, and the value below does not — it is the tip of `main` as it stood
-## when this entry was written. `scripts/check_description_examples.py` asserts
-## only that the ref is a full 40-character SHA, because a check that the commit
+## The `repo.ref` below names a commit that carries the build contract in
+## `Makefile` and the `extension-ci-tools` submodule. `scripts/check_description_examples.py`
+## asserts only that the ref is a full 40-character SHA, because a check that the commit
 ## carries the contract would go quiet in any clone that no longer has the
 ## object, which is the shape of check this repository keeps deleting.
 ##
