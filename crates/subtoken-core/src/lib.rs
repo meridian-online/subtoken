@@ -307,7 +307,14 @@ mod tests {
     use super::*;
 
     /// The cache and the counters are process-global, so the tests that read
-    /// them run one at a time.
+    /// them — **or move them**, which is any test that reaches `embed`,
+    /// `embed_uncached`, `stats` or `clear_cache` — run one at a time.
+    ///
+    /// The second half was added after a test that only *moved* `ENCODED`, by
+    /// embedding one string it never counted, was written without this guard
+    /// and failed three other tests by turns. A test that does not read a
+    /// counter still has to hold the lock, because the window it lands in
+    /// belongs to a test that does.
     static SERIAL: Mutex<()> = Mutex::new(());
 
     fn serial() -> MutexGuard<'static, ()> {
@@ -488,8 +495,18 @@ mod tests {
     /// restated `dim()` would pass a test that also restated it; this one
     /// embeds a string and counts the floats, and finds the truncation boundary
     /// by asking `is_truncated` either side of it.
+    ///
+    /// It takes `serial()` for the `embed` below, which is the whole reason the
+    /// guard exists: `ENCODED` is process-global, and one extra encode landing
+    /// inside another test's counting window is a failure with this test's name
+    /// nowhere in it. Without the guard here, three different counter-reading
+    /// tests were seen to fail — `repeating_a_value_does_not_re_embed_it`,
+    /// `clearing_the_cache_drops_the_entries_and_the_counters` and
+    /// `eight_threads_over_ten_values_encode_ten_times` — each `left: 3, right:
+    /// 2`, whichever one the scheduler put in the way.
     #[test]
     fn the_catalogue_row_describes_the_model_that_is_loaded() {
+        let _guard = serial();
         let row = catalogue().expect("catalogue");
 
         assert_eq!(row.model, model::MODEL_ID);

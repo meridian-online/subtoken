@@ -152,7 +152,7 @@ static PROBES_TAKEN: AtomicU64 = AtomicU64::new(0);
 /// watching every other test's first `embed` as well. That is not hypothetical:
 /// `the_probe_is_taken_once_per_size` failed with "the memo let 1 further
 /// probes through" for a size it was the only caller of, because the cache's
-/// own capacity search — about seventeen probes of other sizes — ran on another
+/// own capacity search — one probe per candidate size it tries — ran on another
 /// thread inside its window.
 static PROBES_BY_SIZE: Mutex<Vec<(usize, u64)>> = Mutex::new(Vec::new());
 
