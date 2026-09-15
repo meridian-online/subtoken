@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 CORE = "crates/subtoken-core/src"
 GLUE = "crates/subtoken-duckdb/src/lib.rs"
+ASSETS = "models/potion-base-8M"
 
 #: The packaged artifact `make extension` writes, and which every SQL and script
 #: mutation here rebuilds from broken source. `git checkout --` puts the code
@@ -1072,13 +1073,118 @@ MUTATIONS: list[Mutation] = [
         expect_red="08_a_scan_wider_than_one_chunk",
         kind="sql",
     ),
+    # A neutral name on purpose. It used to register `embed_nearest_neighbour`,
+    # which trips the similarity guard as well as the count — and since that
+    # guard now runs FIRST in test/sql/05, a payload matching it would prove
+    # only that the guard fires and say nothing about the count or the name
+    # list. `a_similarity_function_is_registered` below is the one that drives
+    # the guard.
     Mutation(
-        name="a_fifth_function_is_registered",
+        name="an_eighth_function_is_registered",
         file=GLUE,
         old='    con.register_scalar_function::<Version>("subtoken_version")?;',
-        new='    con.register_scalar_function::<Version>("subtoken_version")?;\n    con.register_scalar_function::<Version>("embed_nearest_neighbour")?;',
+        new='    con.register_scalar_function::<Version>("subtoken_version")?;\n    con.register_scalar_function::<Version>("subtoken_eighth")?;',
         expect_red="05_the_registered_surface",
         kind="sql",
+    ),
+    # AC4's demonstration, and the reason the guard was moved above the count:
+    # with the count first this mutation reddened on "the extension registers
+    # seven functions" and the guard was never evaluated.
+    Mutation(
+        name="a_similarity_function_is_registered",
+        file=GLUE,
+        old='    con.register_scalar_function::<ModelId>("subtoken_model_id")?;',
+        new='    con.register_scalar_function::<ModelId>("subtoken_model_id")?;\n    con.register_scalar_function::<ModelId>("subtoken_similar")?;',
+        expect_red="05_the_registered_surface",
+        kind="sql",
+    ),
+
+    # ── the model identity SQL stores beside a vector ────────────────────────
+    #
+    # AC1's claim is that changing any one of the three bundled assets moves
+    # `subtoken_model_id()`, and that the move is visible from SQL. For the two
+    # text assets the mutation edits the FILE, which is the altitude the claim
+    # lives at: neither edit changes what the model computes — `model2vec_rs`
+    # reads only `normalize` out of the config, and a whitespace change to the
+    # tokenizer leaves its vocabulary alone — so the id moving is the only thing
+    # either one can be observed to do.
+    #
+    # `model.safetensors` is binary and this harness reads its target with
+    # `read_text()`, so the weights are reached through the hash input instead:
+    # one byte short of the whole file, which is what a weights file that
+    # differed by a byte would hash to. The model itself still loads from the
+    # untouched constant, so that mutation too is observable only as the id
+    # moving.
+    Mutation(
+        name="a_changed_config_asset_leaves_the_id_where_it_was",
+        file=f"{ASSETS}/config.json",
+        old='"seq_length": 1000000',
+        new='"seq_length": 999999',
+        expect_red="11_a_stored_vector",
+        kind="sql",
+    ),
+    Mutation(
+        name="a_changed_tokenizer_asset_leaves_the_id_where_it_was",
+        file=f"{ASSETS}/tokenizer.json",
+        old='  "truncation": null,',
+        new='  "truncation":null,',
+        expect_red="11_a_stored_vector",
+        kind="sql",
+    ),
+    Mutation(
+        name="a_changed_weights_asset_leaves_the_id_where_it_was",
+        file=f"{CORE}/model.rs",
+        old="        let key = model_key(TOKENIZER, WEIGHTS, CONFIG);",
+        new="        let key = model_key(TOKENIZER, &WEIGHTS[..WEIGHTS.len() - 1], CONFIG);",
+        expect_red="11_a_stored_vector",
+        kind="sql",
+    ),
+    # The scalar stops reporting the key and reports the sentence that carries
+    # twelve characters of it — the exact state the card says an analyst is
+    # stuck in today, so a version of this function that "worked" that way has
+    # to be caught.
+    Mutation(
+        name="the_model_id_scalar_reports_the_version_sentence",
+        file=GLUE,
+        old="        let text = CString::new(subtoken_core::model_id()?)?;",
+        new="        let text = CString::new(subtoken_core::describe())?;",
+        expect_red="11_a_stored_vector",
+        kind="sql",
+    ),
+    Mutation(
+        name="the_model_id_is_truncated_the_way_the_sentence_truncates_it",
+        file=f"{CORE}/lib.rs",
+        old="    Ok(model::bundled()?.key_hex())",
+        new="    Ok(model::bundled()?.key_hex()[..12].to_string())",
+        expect_red="the_model_id_is_the_whole_key_the_version_sentence_abbreviates",
+    ),
+    # The catalogue row's `key` is what a stored id joins against. Wired to the
+    # revision it is still 40 characters of hex and still stable across a
+    # session, which is exactly what a row that had quietly stopped being an
+    # identity would look like.
+    Mutation(
+        name="the_catalogue_key_field_is_wired_to_the_revision",
+        file=GLUE,
+        old="            (7, &row.key),",
+        new="            (7, row.revision),",
+        expect_red="11_a_stored_vector",
+        kind="sql",
+    ),
+    Mutation(
+        name="the_catalogue_width_is_restated_rather_than_read",
+        file=f"{CORE}/lib.rs",
+        old="        width: model.dim() as u64,",
+        new="        width: 255,",
+        expect_red="the_catalogue_row_describes_the_model_that_is_loaded",
+    ),
+    Mutation(
+        name="the_catalogue_input_limit_drifts_from_the_cap_that_bites",
+        file=f"{CORE}/lib.rs",
+        old="        input_limit: model::MAX_TOKENS as u64,",
+        new="        input_limit: model::MAX_TOKENS as u64 + 1,",
+        expect_red="11_a_stored_vector",
+        kind="sql",
+        also_reddens=["the_catalogue_row_describes_the_model_that_is_loaded"],
     ),
     Mutation(
         name="embed_returns_a_list_of_doubles_instead_of_floats",
