@@ -133,7 +133,7 @@ HEARTBEAT_SECONDS = 10
 #: tree beneath it, and the orphans were still rewriting
 #: `scripts/check_assertions_can_fail.py` four seconds after the sweep's `finally`
 #: had put it back.
-SWEEP_MARKER = "STATICEMBED_SWEEP_RUNNING"
+SWEEP_MARKER = "SUBTOKEN_SWEEP_RUNNING"
 
 
 @dataclass(frozen=True)

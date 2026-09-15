@@ -29,7 +29,7 @@ WHAT THIS CHECKS, and why each expectation comes from where it does:
         `$(EXTENSION_VERSION)` the Makefile stamped with would compare a number
         against itself, which is a check that cannot fail.
 
-    duckdb version      `MIN_DUCKDB_VERSION` in crates/staticembed-duckdb/src/lib.rs
+    duckdb version      `MIN_DUCKDB_VERSION` in crates/subtoken-duckdb/src/lib.rs
         The trailer's FIELD3 is the stable-C-API floor the artifact declares.
         The Makefile's `TARGET_DUCKDB_VERSION` is a second copy of that constant
         and says in a comment that it mirrors this one; comparing the trailer to
@@ -43,9 +43,9 @@ WHAT THIS CHECKS, and why each expectation comes from where it does:
 
 Stdlib only.
 
-    scripts/check_artifact_version.py --artifact build/release/extension/staticembed/staticembed.duckdb_extension
-    scripts/check_artifact_version.py --compare build/staticembed.duckdb_extension build/release/.../staticembed.duckdb_extension
-    scripts/check_artifact_version.py --show build/staticembed.duckdb_extension
+    scripts/check_artifact_version.py --artifact build/release/extension/subtoken/subtoken.duckdb_extension
+    scripts/check_artifact_version.py --compare build/subtoken.duckdb_extension build/release/.../subtoken.duckdb_extension
+    scripts/check_artifact_version.py --show build/subtoken.duckdb_extension
     scripts/check_artifact_version.py --self-test
 """
 
@@ -151,7 +151,7 @@ def version_in_cargo_toml(path: pathlib.Path | None = None) -> str:
 
 def min_duckdb_version(path: pathlib.Path | None = None) -> str:
     """`MIN_DUCKDB_VERSION` from the extension crate's source."""
-    path = path or (REPO_ROOT / "crates" / "staticembed-duckdb" / "src" / "lib.rs")
+    path = path or (REPO_ROOT / "crates" / "subtoken-duckdb" / "src" / "lib.rs")
     found = re.search(r'MIN_DUCKDB_VERSION\s*:\s*&str\s*=\s*"([^"]+)"', path.read_text())
     if not found:
         raise SystemExit(f"{path} does not define MIN_DUCKDB_VERSION")

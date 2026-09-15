@@ -1,9 +1,9 @@
-## The DuckDB community-extensions registry entry for staticembed.
+## The DuckDB community-extensions registry entry for subtoken.
 ##
-## This file is the submission: it is copied to `extensions/staticembed/description.yml`
+## This file is the submission: it is copied to `extensions/subtoken/description.yml`
 ## in duckdb/community-extensions. Merging it there makes DuckDB's CI build this
 ## repository at `repo.ref` for every platform in the matrix and publish the
-## binaries, after which `INSTALL staticembed FROM community` works for anyone.
+## binaries, after which `INSTALL subtoken FROM community` works for anyone.
 ##
 ## `repo.ref` MUST BE REPOINTED before this is submitted. It has to name a commit
 ## that carries the build contract in `Makefile` and the `extension-ci-tools`
@@ -18,7 +18,7 @@
 ## configure_ci`, `make release`, `make test_release` at this repository's root.
 
 extension:
-  name: staticembed
+  name: subtoken
   description: Static text embeddings as a DuckDB scalar — a vector per row from a model bundled in the binary, with no API key and no network call
   version: 0.1.0
   language: Rust
@@ -34,7 +34,7 @@ extension:
     - hughcameron
 
 repo:
-  github: meridian-online/staticembed
+  github: meridian-online/subtoken
   ref: 18099ec60057099b37a38c57522c9194685c56d4
 
 docs:
@@ -49,11 +49,11 @@ docs:
         (4, 'a chain of hardware stores');
 
     -- 256 floats per row, for this model.
-    SELECT id, len(embed(description)) AS width FROM corpus ORDER BY id;
+    SELECT id, len(subtoken_embed(description)) AS width FROM corpus ORDER BY id;
 
-    -- embed is a scalar, so it composes with WHERE and LIMIT: embed a filtered
+    -- subtoken_embed is a scalar, so it composes with WHERE and LIMIT: embed a filtered
     -- subset rather than a whole table.
-    SELECT id, embed(description) AS v
+    SELECT id, subtoken_embed(description) AS v
     FROM corpus
     WHERE description LIKE '%valve%';
 
@@ -62,13 +62,13 @@ docs:
     -- dropped. Ask, rather than counting tokens.
     SELECT count(*) AS truncated_rows
     FROM corpus
-    WHERE embed_is_truncated(description);
+    WHERE subtoken_is_truncated(description);
 
     -- Which build, which model, which width.
-    SELECT staticembed_version();
+    SELECT subtoken_version();
 
   extended_description: |
-    `staticembed` turns a string into a vector inside DuckDB, using a
+    `subtoken` turns a string into a vector inside DuckDB, using a
     [Model2Vec](https://github.com/MinishLab/model2vec) static embedding model
     compiled into the extension binary. There is no API key to configure, no
     network call at query time, and no per-row cost.
@@ -79,7 +79,7 @@ docs:
     invoice you find out about afterwards. A static embedding is neither: it is a
     token lookup and a mean, so it is bounded, local and free at the margin.
 
-    Being a scalar is the point. `embed` composes with `WHERE` and `LIMIT`, so a
+    Being a scalar is the point. `subtoken_embed` composes with `WHERE` and `LIMIT`, so a
     filtered subset of a table can be embedded without materialising the rest,
     and it behaves the same over a local Parquet file as over a remote one.
 
@@ -161,13 +161,13 @@ docs:
     | region structure kept | 71% | 67% | 88% |
 
     **It also does not read word order.** A Model2Vec vector is the mean of its
-    token vectors, so `embed('valve bodies')` and `embed('bodies valve')` are
+    token vectors, so `subtoken_embed('valve bodies')` and `subtoken_embed('bodies valve')` are
     the same vector — a false duplicate, which is a pairwise failure and not a
     ranked-retrieval one. Repetition does count — a word twice pulls the mean
     toward it — but any phrase and its shuffle land in the same place.
 
     ```sql
-    SELECT embed('valve bodies') = embed('bodies valve') AS order_is_ignored;
+    SELECT subtoken_embed('valve bodies') = subtoken_embed('bodies valve') AS order_is_ignored;
     ```
 
     Our figures were measured with the harness in
@@ -178,46 +178,46 @@ docs:
     narrower, and worth having: vectors from two model versions are not
     comparable, so `scripts/check_quality_claims.py` reddens when the bundled
     revision moves off the one in
-    [`models/potion-base-8M/SOURCE.md`](https://github.com/meridian-online/staticembed/blob/main/models/potion-base-8M/SOURCE.md)
+    [`models/potion-base-8M/SOURCE.md`](https://github.com/meridian-online/subtoken/blob/main/models/potion-base-8M/SOURCE.md)
     that these figures were published against, which forces a re-run or a
     deliberate re-blessing instead of a quiet drift. It holds this section and
     the README's copy of it to the same figures at the same time.
 
     ## The SQL surface
 
-    Five functions, and `embed` is the one you came for.
+    Five functions, and `subtoken_embed` is the one you came for.
 
     | function | returns | what it is for |
     |---|---|---|
-    | `embed(text VARCHAR)` | `FLOAT[]` | the vector for one string |
-    | `embed_is_truncated(text VARCHAR)` | `BOOLEAN` | whether `embed(text)` had to drop content to fit |
-    | `staticembed_version()` | `VARCHAR` | which build, which model, which vector width |
-    | `staticembed_cache_stats()` | `STRUCT(hits, misses, encoded, uncached, entries, capacity)` | what the cache has been doing |
-    | `staticembed_cache_clear()` | `BIGINT` | drop the cached vectors; returns how many |
+    | `subtoken_embed(text VARCHAR)` | `FLOAT[]` | the vector for one string |
+    | `subtoken_is_truncated(text VARCHAR)` | `BOOLEAN` | whether `subtoken_embed(text)` had to drop content to fit |
+    | `subtoken_version()` | `VARCHAR` | which build, which model, which vector width |
+    | `subtoken_cache_stats()` | `STRUCT(hits, misses, encoded, uncached, entries, capacity)` | what the cache has been doing |
+    | `subtoken_cache_clear()` | `BIGINT` | drop the cached vectors; returns how many |
 
     ### NULL, and text with nothing in it
 
-    `embed(NULL)` is `NULL`. Text that tokenises to nothing — the empty string,
+    `subtoken_embed(NULL)` is `NULL`. Text that tokenises to nothing — the empty string,
     whitespace, a string of characters the vocabulary does not carry — is a **zero
     vector of full width**, because the mean over zero tokens is zero. The two are
     different on purpose: a missing value is not the same as a value that carries
     no signal, and only one of them should disappear from a `WHERE ... IS NOT NULL`.
 
     ```sql
-    SELECT embed(NULL) IS NULL              AS null_stays_null,
-           list_sum(embed('')) = 0.0        AS empty_is_a_zero_vector,
-           len(embed(''))                   AS still_full_width;
+    SELECT subtoken_embed(NULL) IS NULL              AS null_stays_null,
+           list_sum(subtoken_embed('')) = 0.0        AS empty_is_a_zero_vector,
+           len(subtoken_embed(''))                   AS still_full_width;
     ```
 
     If you want the single behaviour a text pipeline usually gives you, ask for it:
 
     ```sql
-    SELECT embed(coalesce(description, '')) FROM corpus;
+    SELECT subtoken_embed(coalesce(description, '')) FROM corpus;
     ```
 
     ### A long text is truncated before the mean, and nothing about the vector says so
 
-    `embed` builds its vector from at most **512 tokens**, and from a bounded
+    `subtoken_embed` builds its vector from at most **512 tokens**, and from a bounded
     number of characters before that — just over three thousand for this model.
     Anything past either is dropped before the mean, not down-weighted, and the
     vector that comes back is full width and unit norm either way. Two rows whose
@@ -231,17 +231,17 @@ docs:
     characters. You do not need to reason about which case you are in:
 
     ```sql
-    SELECT embed_is_truncated(repeat('a very long description of a valve foundry ', 500)) AS long_text_is_truncated,
-           embed_is_truncated('a foundry casting valve bodies')                           AS short_text_is_not,
-           embed_is_truncated(repeat(' ', 5000))                                          AS whitespace_lost_nothing;
+    SELECT subtoken_is_truncated(repeat('a very long description of a valve foundry ', 500)) AS long_text_is_truncated,
+           subtoken_is_truncated('a foundry casting valve bodies')                           AS short_text_is_not,
+           subtoken_is_truncated(repeat(' ', 5000))                                          AS whitespace_lost_nothing;
     ```
 
-    What it reports is whether `embed` pooled less of the text than the whole of it
+    What it reports is whether `subtoken_embed` pooled less of the text than the whole of it
     would have given, which is not the same question as whether the text was long.
     Five thousand spaces is `false`; so is a column of characters this vocabulary
     does not carry, however far past the character cut it runs, because the cut
-    took nothing that would have reached the mean. `embed_is_truncated(NULL)` is
-    `NULL`, matching `embed(NULL)`, so it drops out of a `WHERE` clause the same way.
+    took nothing that would have reached the mean. `subtoken_is_truncated(NULL)` is
+    `NULL`, matching `subtoken_embed(NULL)`, so it drops out of a `WHERE` clause the same way.
 
     ### What counts as the same string
 
@@ -250,8 +250,8 @@ docs:
     order still matters, and different words still give different vectors.
 
     ```sql
-    SELECT embed('Steel') = embed('  steel  ')          AS case_and_space_fold,
-           embed('café')  = embed('cafe' || chr(769))   AS accents_fold;
+    SELECT subtoken_embed('Steel') = subtoken_embed('  steel  ')          AS case_and_space_fold,
+           subtoken_embed('café')  = subtoken_embed('cafe' || chr(769))   AS accents_fold;
     ```
 
     The cache keys on the exact input bytes rather than on the tokenizer's folded
@@ -268,24 +268,24 @@ docs:
     weights cannot serve you the old ones.
 
     ```sql
-    SELECT staticembed_cache_clear();
-    CREATE TABLE v AS SELECT embed(description) FROM corpus;
-    SELECT staticembed_cache_stats().encoded AS encoded_first_pass,
-           staticembed_cache_stats().uncached AS turned_away;
+    SELECT subtoken_cache_clear();
+    CREATE TABLE v AS SELECT subtoken_embed(description) FROM corpus;
+    SELECT subtoken_cache_stats().encoded AS encoded_first_pass,
+           subtoken_cache_stats().uncached AS turned_away;
 
-    CREATE TABLE w AS SELECT embed(description) FROM corpus;
-    SELECT staticembed_cache_stats().encoded AS encoded_after_a_repeat;
+    CREATE TABLE w AS SELECT subtoken_embed(description) FROM corpus;
+    SELECT subtoken_cache_stats().encoded AS encoded_after_a_repeat;
     ```
 
     **The bound.** The cache spends a fixed memory budget — 64 MiB — so it holds
     `capacity` vectors and no more. Once it is full it **stops admitting new values
     rather than evicting old ones**, and `uncached` counts every lookup it turned
-    away. `staticembed_cache_stats().capacity` is the only place to read the
+    away. `subtoken_cache_stats().capacity` is the only place to read the
     figure: it depends on the model's vector width and on how your platform's
     allocator rounds, which the extension measures at startup rather than assuming.
 
     ```sql
-    SELECT staticembed_cache_stats().capacity > 0 AS capacity_is_measured;
+    SELECT subtoken_cache_stats().capacity > 0 AS capacity_is_measured;
     ```
 
     A column with more distinct values than `capacity` is served for `capacity` of
@@ -295,7 +295,7 @@ docs:
     before it is next wanted and the hit rate is **zero**, which is a cliff rather
     than a slope. What the choice costs is adaptivity: the values kept are the ones
     seen first in the session, so if you move on to a different column the cache
-    stays full of the old one. `SELECT staticembed_cache_clear();` empties it, and
+    stays full of the old one. `SELECT subtoken_cache_clear();` empties it, and
     a non-zero `uncached` is the sign that it is time.
 
     ## The model
@@ -313,4 +313,4 @@ docs:
     the weights. The extension's own code is MIT.
 
     Source, checksums and the revision the weights came from are in
-    [`models/potion-base-8M/SOURCE.md`](https://github.com/meridian-online/staticembed/blob/main/models/potion-base-8M/SOURCE.md).
+    [`models/potion-base-8M/SOURCE.md`](https://github.com/meridian-online/subtoken/blob/main/models/potion-base-8M/SOURCE.md).

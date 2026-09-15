@@ -48,7 +48,7 @@ jobs:
     with:
       duckdb_version: v1.5.5
       ci_tools_version: v1.5-variegata
-      extension_name: staticembed
+      extension_name: subtoken
       # The Rust toolchain builds the cdylib; python3 backs the metadata-stamp
       # venv that `make configure` creates.
       extra_toolchains: 'rust;python3'
@@ -125,7 +125,7 @@ jobs:
       - name: Download the artifact this pipeline built
         uses: actions/download-artifact@v4
         with:
-          name: staticembed-${{ env.DUCKDB_VERSION }}-extension-${{ matrix.duckdb_arch }}
+          name: subtoken-${{ env.DUCKDB_VERSION }}-extension-${{ matrix.duckdb_arch }}
           path: downloaded
 
       - name: Nothing in it can open a socket
@@ -134,7 +134,7 @@ jobs:
           set -euo pipefail
           python scripts/check_no_network_deps.py --self-test
           python scripts/check_no_network_deps.py \
-            --artifact downloaded/staticembed.duckdb_extension \
+            --artifact downloaded/subtoken.duckdb_extension \
             --require-inspection
 
       # AC6 on the artifact that would be published, not on a local build.
@@ -144,7 +144,7 @@ jobs:
           set -euo pipefail
           python scripts/check_artifact_version.py --self-test
           python scripts/check_artifact_version.py \
-            --artifact downloaded/staticembed.duckdb_extension \
+            --artifact downloaded/subtoken.duckdb_extension \
             --expect-platform ${{ matrix.duckdb_arch }}
 
       # Everything above reads the file. None of it runs it, and a binary
@@ -153,7 +153,7 @@ jobs:
       # base.Makefile sets SKIP_TESTS for linux_amd64 and inside the Linux
       # container, and the reusable workflow does not run its test step for
       # linux_arm64 at all, so `make test_release` reaches only osx_arm64 and
-      # windows_amd64. `INSTALL ... FROM community; LOAD staticembed;` failing
+      # windows_amd64. `INSTALL ... FROM community; LOAD subtoken;` failing
       # is the exact experience this pipeline exists to prevent, so ask the
       # uploaded artifact, on a runner of its own platform.
       - name: Install the DuckDB CLI that would load it
@@ -186,19 +186,19 @@ jobs:
           # hardened program" — and bash's own $PWD on the Windows runner is an
           # MSYS path the native DuckDB cannot resolve. Python's `as_posix()`
           # spells one path all five runners accept.
-          artifact=$(python -c "import pathlib; print(pathlib.Path('downloaded/staticembed.duckdb_extension').resolve().as_posix())")
+          artifact=$(python -c "import pathlib; print(pathlib.Path('downloaded/subtoken.duckdb_extension').resolve().as_posix())")
           extdir=$(python -c "import pathlib; print(pathlib.Path('empty_extension_dir').resolve().as_posix())")
           # `error()` raises, and the CLI exits non-zero when a statement
           # raises, so a wrong answer fails this step rather than printing.
           "$cli" -unsigned -init empty_init.sql -batch -noheader -list -c "
             SET extension_directory='$extdir';
             LOAD '$artifact';
-            SELECT staticembed_version();
+            SELECT subtoken_version();
             SELECT CASE
-                WHEN len(embed('a foundry casting valve bodies')) = len(embed(''))
-                 AND len(embed('')) > 0
-                THEN 'embed() returned a full-width vector'
-                ELSE error('embed() did not return a full-width vector')
+                WHEN len(subtoken_embed('a foundry casting valve bodies')) = len(subtoken_embed(''))
+                 AND len(subtoken_embed('')) > 0
+                THEN 'subtoken_embed() returned a full-width vector'
+                ELSE error('subtoken_embed() did not return a full-width vector')
             END;
           "
 
@@ -209,7 +209,7 @@ jobs:
       - name: The size the registry would serve
         shell: bash
         run: |
-          python - downloaded/staticembed.duckdb_extension <<'EOF'
+          python - downloaded/subtoken.duckdb_extension <<'EOF'
           import gzip, pathlib, sys
           raw = pathlib.Path(sys.argv[1]).read_bytes()
           served = len(gzip.compress(raw))

@@ -1,4 +1,4 @@
--- AC3, from this side of the boundary: staticembed is its own extension with
+-- AC3, from this side of the boundary: subtoken is its own extension with
 -- its own surface. finetype is a different repo and a different artifact, and
 -- nothing here uses its prefix or its type contract.
 --
@@ -8,7 +8,7 @@
 
 CREATE TABLE registered AS
     SELECT DISTINCT function_name FROM duckdb_functions()
-    WHERE function_name NOT IN (SELECT function_name FROM staticembed_baseline_functions)
+    WHERE function_name NOT IN (SELECT function_name FROM subtoken_baseline_functions)
       AND function_name <> 'must';
 
 SELECT must('the extension registers five functions',
@@ -16,7 +16,7 @@ SELECT must('the extension registers five functions',
 
 SELECT must('and they are exactly the documented five',
     (SELECT list_sort(list(function_name)) FROM registered)
-    = ['embed', 'embed_is_truncated', 'staticembed_cache_clear', 'staticembed_cache_stats', 'staticembed_version']);
+    = ['subtoken_cache_clear', 'subtoken_cache_stats', 'subtoken_embed', 'subtoken_is_truncated', 'subtoken_version']);
 
 -- No nearest-neighbour lookup, deliberately. The measured position of this
 -- model is that a map built from its vectors keeps the cluster structure and

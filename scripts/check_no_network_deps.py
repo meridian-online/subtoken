@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail if anything that can open a socket is linked into the extension.
 
-AC2 says the model loads with no network. A test that calls `embed()` and gets a
+AC2 says the model loads with no network. A test that calls `subtoken_embed()` and gets a
 vector cannot prove that: it proves the model was found, not that no other code
 path could have gone looking for it. What proves it is the absence of an HTTP or
 TLS client from the tree at all, and that is mechanical.
@@ -52,7 +52,7 @@ LINKED LIBRARIES
 Stdlib only.
 
     scripts/check_no_network_deps.py
-    scripts/check_no_network_deps.py --artifact build/staticembed.duckdb_extension
+    scripts/check_no_network_deps.py --artifact build/subtoken.duckdb_extension
     scripts/check_no_network_deps.py --self-test
 """
 
@@ -452,7 +452,7 @@ def self_test() -> int:
     dirty one is indistinguishable from a checker that always returns clean.
     """
     dirty = (
-        "staticembed-core v0.1.0\n"
+        "subtoken-core v0.1.0\n"
         "├── model2vec-rs v0.2.1\n"
         "│   ├── hf-hub v0.4.3\n"
         "│   │   └── ureq v2.12.1\n"
@@ -465,7 +465,7 @@ def self_test() -> int:
         print(f"self-test FAILED: matched {sorted(found)}, expected {sorted(expected)}", file=sys.stderr)
         return 1
 
-    clean = "staticembed-core v0.1.0\n└── sha2 v0.10.9\n"
+    clean = "subtoken-core v0.1.0\n└── sha2 v0.10.9\n"
     if offending_crates(clean):
         print("self-test FAILED: matched a clean tree", file=sys.stderr)
         return 1

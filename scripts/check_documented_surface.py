@@ -2,7 +2,7 @@
 """Fail when the documented SQL surface disagrees with the loaded catalog.
 
 Each file in `SCANNED` writes the extension's function table out in prose: the
-function, its return type, and for `staticembed_cache_stats()` the field list of
+function, its return type, and for `subtoken_cache_stats()` the field list of
 the STRUCT it returns. Each copy of a signature is another chance to be wrong,
 and one of them was: the page listed five fields for a six-field struct,
 omitting `uncached` — the counter that tells a reader which side of the cache's
@@ -39,7 +39,7 @@ WHAT IS NOT ASSERTED
 
 Needs the duckdb CLI and a packaged extension. Stdlib only.
 
-    scripts/check_documented_surface.py --extension build/staticembed.duckdb_extension
+    scripts/check_documented_surface.py --extension build/subtoken.duckdb_extension
     scripts/check_documented_surface.py --self-test
 """
 
@@ -57,7 +57,7 @@ import tempfile
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 #: Files that write the surface out in prose and must agree with the catalog.
-SCANNED = ("README.md", "crates/staticembed-duckdb/src/lib.rs", "description.yml")
+SCANNED = ("README.md", "crates/subtoken-duckdb/src/lib.rs", "description.yml")
 
 #: A `STRUCT(...)` signature as the docs write it: field names, no types.
 DOCUMENTED_STRUCT = re.compile(r"STRUCT\(([^)]*)\)")
@@ -211,7 +211,7 @@ def self_test() -> int:
         print("self-test FAILED: a non-STRUCT was parsed as one", file=sys.stderr)
         return 1
 
-    stale = "| `staticembed_cache_stats()` | `STRUCT(hits, misses, encoded, entries, capacity)` |"
+    stale = "| `subtoken_cache_stats()` | `STRUCT(hits, misses, encoded, entries, capacity)` |"
     found = documented_struct_fields(stale)
     if found != [["hits", "misses", "encoded", "entries", "capacity"]]:
         print(f"self-test FAILED: doc parse gave {found}", file=sys.stderr)
@@ -230,19 +230,19 @@ def self_test() -> int:
     # row parser that reads only the first leaves the other two unscanned while
     # reporting clean.
     three_spellings = (
-        "| `embed(text VARCHAR)` | `FLOAT[]` | the vector for one string |\n"
-        "//! | `staticembed_version()` | `VARCHAR` | which build |\n"
-        "    | `staticembed_cache_clear()` | `BIGINT` | drop the cached vectors |\n"
+        "| `subtoken_embed(text VARCHAR)` | `FLOAT[]` | the vector for one string |\n"
+        "//! | `subtoken_version()` | `VARCHAR` | which build |\n"
+        "    | `subtoken_cache_clear()` | `BIGINT` | drop the cached vectors |\n"
     )
     rows = documented_rows(three_spellings)
     if rows != [
-        ("embed", "FLOAT[]"),
-        ("staticembed_version", "VARCHAR"),
-        ("staticembed_cache_clear", "BIGINT"),
+        ("subtoken_embed", "FLOAT[]"),
+        ("subtoken_version", "VARCHAR"),
+        ("subtoken_cache_clear", "BIGINT"),
     ]:
         print(f"self-test FAILED: the row parser gave {rows}", file=sys.stderr)
         return 1
-    if documented_rows("embed(text VARCHAR) returns FLOAT[]") != []:
+    if documented_rows("subtoken_embed(text VARCHAR) returns FLOAT[]") != []:
         print("self-test FAILED: prose was read as a table row", file=sys.stderr)
         return 1
 
@@ -265,10 +265,10 @@ def self_test() -> int:
         return 1
 
     # And the per-file comparison, each defect planted in turn.
-    truth = {"embed": "FLOAT[]", "staticembed_cache_stats": "STRUCT(hits BIGINT, misses BIGINT)"}
+    truth = {"subtoken_embed": "FLOAT[]", "subtoken_cache_stats": "STRUCT(hits BIGINT, misses BIGINT)"}
     good = (
-        "| `embed(text VARCHAR)` | `FLOAT[]` | the vector |\n"
-        "| `staticembed_cache_stats()` | `STRUCT(hits, misses)` | the cache |\n"
+        "| `subtoken_embed(text VARCHAR)` | `FLOAT[]` | the vector |\n"
+        "| `subtoken_cache_stats()` | `STRUCT(hits, misses)` | the cache |\n"
     )
     for label, text, needle in (
         ("a clean file reports nothing", good, None),
@@ -284,7 +284,7 @@ def self_test() -> int:
         ),
         (
             "an omitted function is caught",
-            "| `embed(text VARCHAR)` | `FLOAT[]` | the vector |\n",
+            "| `subtoken_embed(text VARCHAR)` | `FLOAT[]` | the vector |\n",
             "omits registered functions",
         ),
         (

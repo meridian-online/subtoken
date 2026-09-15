@@ -1,5 +1,5 @@
 [package]
-name = "staticembed-duckdb"
+name = "subtoken-duckdb"
 description = "DuckDB scalar function returning a static embedding for a string"
 version.workspace = true
 edition.workspace = true
@@ -8,12 +8,12 @@ repository.workspace = true
 publish = false
 
 # The community-extensions build contract derives the library filename from the
-# extension name, not from the package name, so the cdylib is `staticembed`.
+# extension name, not from the package name, so the cdylib is `subtoken`.
 [lib]
-name = "staticembed"
+name = "subtoken"
 crate-type = ["cdylib"]
 
 [dependencies]
 duckdb = { workspace = true }
 libduckdb-sys = { workspace = true }
-staticembed-core = { workspace = true }
+subtoken-core = { workspace = true }

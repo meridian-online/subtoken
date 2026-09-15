@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/staticembed-core", "crates/staticembed-duckdb"]
+members = ["crates/subtoken-core", "crates/subtoken-duckdb"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/meridian-online/staticembed"
+repository = "https://github.com/meridian-online/subtoken"
 
 [workspace.dependencies]
 # The upstream Model2Vec implementation. `default-features = false` drops
@@ -18,7 +18,7 @@ repository = "https://github.com/meridian-online/staticembed"
 model2vec-rs = { version = "0.2.1", default-features = false, features = ["local-only"] }
 
 # `tokenizers` is a transitive dependency of model2vec-rs. It was originally
-# listed here only to choose its regex backend; `staticembed-core` now also
+# listed here only to choose its regex backend; `subtoken-core` now also
 # loads a second copy of the bundled tokenizer directly with it, to answer
 # "did `embed` lose any of this text" — that needs the id list either side of
 # the cuts, and `model2vec_rs::StaticModel` keeps its own tokenizer, its unk
@@ -39,11 +39,11 @@ serde_json = "1"
 
 # Pinned exactly, matching the DuckDB C API surface this artifact is built
 # against. The stable C_STRUCT ABI floor the packaged artifact declares is
-# `MIN_DUCKDB_VERSION` in crates/staticembed-duckdb/src/lib.rs.
+# `MIN_DUCKDB_VERSION` in crates/subtoken-duckdb/src/lib.rs.
 duckdb = { version = "=1.10505.0", features = ["loadable-extension", "vscalar"] }
 libduckdb-sys = "=1.10505.0"
 
-staticembed-core = { path = "crates/staticembed-core" }
+subtoken-core = { path = "crates/subtoken-core" }
 
 [profile.release]
 # The bundled weights dominate the artifact; there is no reason to also carry

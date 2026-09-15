@@ -34,7 +34,7 @@ mod counting_allocator;
 
 use std::sync::Arc;
 
-use staticembed_core::cache::{self, EmbeddingCache, DEFAULT_BUDGET_BYTES};
+use subtoken_core::cache::{self, EmbeddingCache, DEFAULT_BUDGET_BYTES};
 
 #[global_allocator]
 static COUNTING: counting_allocator::Counting = counting_allocator::Counting;

@@ -1,6 +1,6 @@
 [package]
-name = "staticembed-core"
-description = "Static text embeddings from a model bundled at build time — the engine behind the staticembed DuckDB extension"
+name = "subtoken-core"
+description = "Static text embeddings from a model bundled at build time — the engine behind the subtoken DuckDB extension"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

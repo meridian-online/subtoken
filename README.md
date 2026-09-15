@@ -1,12 +1,12 @@
-# staticembed
+# subtoken
 
 A DuckDB scalar function that turns a string into a vector, using a static embedding model bundled in the extension binary. No API key, no network call, no per-row bill.
 
 ```sql
-INSTALL staticembed FROM community;
-LOAD staticembed;
+INSTALL subtoken FROM community;
+LOAD subtoken;
 
-SELECT description, embed(description) AS v
+SELECT description, subtoken_embed(description) AS v
 FROM read_parquet('corpus.parquet')
 WHERE industry = 'manufacturing'
 LIMIT 100;
@@ -47,72 +47,72 @@ Being a scalar is the point. It composes with `WHERE` and `LIMIT`, so you can em
 | nearest neighbours that survive | 13% | 28% | 40% |
 | region structure kept | 71% | 67% | 88% |
 
-**It also does not read word order.** A Model2Vec vector is the mean of its token vectors, so `embed('valve bodies')` and `embed('bodies valve')` are the same vector — a false duplicate, which is a pairwise failure and not a ranked-retrieval one. Repetition does count — a word twice pulls the mean toward it — but any phrase and its shuffle land in the same place.
+**It also does not read word order.** A Model2Vec vector is the mean of its token vectors, so `subtoken_embed('valve bodies')` and `subtoken_embed('bodies valve')` are the same vector — a false duplicate, which is a pairwise failure and not a ranked-retrieval one. Repetition does count — a word twice pulls the mean toward it — but any phrase and its shuffle land in the same place.
 
 Our figures were measured with the harness in `eval/static-embedding-map-fidelity/` against `potion-base-8M` as Hugging Face served it at the time; that harness downloads the model by name and records no revision, so the tie between these figures and the weights in this binary is asserted here rather than recorded there. What is enforced is narrower, and worth having: vectors from two model versions are not comparable, so `scripts/check_quality_claims.py` reddens when the bundled revision moves off the one in [`models/potion-base-8M/SOURCE.md`](models/potion-base-8M/SOURCE.md) that these figures were published against, which forces a re-run or a deliberate re-blessing instead of a quiet drift. It holds this section and `description.yml`'s copy of it to the same figures at the same time.
 
 ## The SQL surface
 
-Five functions, and `embed` is the one you came for.
+Five functions, and `subtoken_embed` is the one you came for.
 
 | function | returns | what it is for |
 |---|---|---|
-| `embed(text VARCHAR)` | `FLOAT[]` | the vector for one string |
-| `embed_is_truncated(text VARCHAR)` | `BOOLEAN` | whether `embed(text)` had to drop content to fit |
-| `staticembed_version()` | `VARCHAR` | which build, which model, which vector width |
-| `staticembed_cache_stats()` | `STRUCT(hits, misses, encoded, uncached, entries, capacity)` | what the cache has been doing |
-| `staticembed_cache_clear()` | `BIGINT` | drop the cached vectors; returns how many |
+| `subtoken_embed(text VARCHAR)` | `FLOAT[]` | the vector for one string |
+| `subtoken_is_truncated(text VARCHAR)` | `BOOLEAN` | whether `subtoken_embed(text)` had to drop content to fit |
+| `subtoken_version()` | `VARCHAR` | which build, which model, which vector width |
+| `subtoken_cache_stats()` | `STRUCT(hits, misses, encoded, uncached, entries, capacity)` | what the cache has been doing |
+| `subtoken_cache_clear()` | `BIGINT` | drop the cached vectors; returns how many |
 
 There is no similarity or nearest-neighbour function, deliberately. See *What it is good at, and what it is not* above.
 
 ### NULL, and text with nothing in it
 
-`embed(NULL)` is `NULL`. Text that tokenises to nothing — the empty string, whitespace, a string of characters the vocabulary does not carry — is a **zero vector of full width**, because the mean over zero tokens is zero. The two are different on purpose: a missing value is not the same as a value that carries no signal, and only one of them should disappear from a `WHERE ... IS NOT NULL`.
+`subtoken_embed(NULL)` is `NULL`. Text that tokenises to nothing — the empty string, whitespace, a string of characters the vocabulary does not carry — is a **zero vector of full width**, because the mean over zero tokens is zero. The two are different on purpose: a missing value is not the same as a value that carries no signal, and only one of them should disappear from a `WHERE ... IS NOT NULL`.
 
 If you want the single behaviour a text pipeline usually gives you, ask for it:
 
 ```sql
-SELECT embed(coalesce(description, '')) FROM corpus;
+SELECT subtoken_embed(coalesce(description, '')) FROM corpus;
 ```
 
 ### A long text is truncated before the mean, and nothing about the vector says so
 
-`embed` builds its vector from at most **512 tokens** of `text` — roughly the first few hundred words of ordinary English for most prose. Anything past that is dropped before the mean is taken, not down-weighted, and the vector that comes back is full width and unit norm either way. Two rows whose descriptions agree up to the cut and then diverge completely embed to the same place, and nothing about the result tells you that happened.
+`subtoken_embed` builds its vector from at most **512 tokens** of `text` — roughly the first few hundred words of ordinary English for most prose. Anything past that is dropped before the mean is taken, not down-weighted, and the vector that comes back is full width and unit norm either way. Two rows whose descriptions agree up to the cut and then diverge completely embed to the same place, and nothing about the result tells you that happened.
 
-That 512-token figure is not the whole story for every kind of text. Before it tokenises anything, `embed` cuts the raw string to a character count derived from the vocabulary — just over three thousand characters for this model. For text made of unusually long, dense tokens — URLs, camelCase or snake_case identifiers, run-together compound words, anything with few word breaks — that is the cut that bites, and it bites while the token count is still nowhere near 512. Non-Latin scripts move the balance the other way: a line of Korean is two or three tokens per character, so it reaches the token cap in a few hundred. You do not need to reason about which case you are in: `embed_is_truncated` answers the question either way, which is the point of asking it instead of counting.
+That 512-token figure is not the whole story for every kind of text. Before it tokenises anything, `subtoken_embed` cuts the raw string to a character count derived from the vocabulary — just over three thousand characters for this model. For text made of unusually long, dense tokens — URLs, camelCase or snake_case identifiers, run-together compound words, anything with few word breaks — that is the cut that bites, and it bites while the token count is still nowhere near 512. Non-Latin scripts move the balance the other way: a line of Korean is two or three tokens per character, so it reaches the token cap in a few hundred. You do not need to reason about which case you are in: `subtoken_is_truncated` answers the question either way, which is the point of asking it instead of counting.
 
-`embed_is_truncated(text)` is how you find out before you trust a result — a plain question, not a token count, so you never have to know the limit is 512, or where else it might bite, to ask it:
+`subtoken_is_truncated(text)` is how you find out before you trust a result — a plain question, not a token count, so you never have to know the limit is 512, or where else it might bite, to ask it:
 
 ```sql
-SELECT count(*) FROM corpus WHERE embed_is_truncated(description);
+SELECT count(*) FROM corpus WHERE subtoken_is_truncated(description);
 ```
 
-`embed_is_truncated(NULL)` is `NULL`, the same as `embed(NULL)`, so it drops out of a `WHERE` clause the same way.
+`subtoken_is_truncated(NULL)` is `NULL`, the same as `subtoken_embed(NULL)`, so it drops out of a `WHERE` clause the same way.
 
-What it reports is whether `embed` pooled less of the text than the whole of it would have given, and that is not the same question as whether the text was long. Five thousand spaces is `false`. So is a column of characters this vocabulary does not carry, however far past the character cut it runs: the cut took nothing that would have reached the mean. It also costs more than `embed` does on a very long value — `embed` stops reading at the character cut and this has to look past it to know whether anything was there.
+What it reports is whether `subtoken_embed` pooled less of the text than the whole of it would have given, and that is not the same question as whether the text was long. Five thousand spaces is `false`. So is a column of characters this vocabulary does not carry, however far past the character cut it runs: the cut took nothing that would have reached the mean. It also costs more than `subtoken_embed` does on a very long value — `subtoken_embed` stops reading at the character cut and this has to look past it to know whether anything was there.
 
 ### What counts as the same string
 
-The bundled tokenizer lowercases, strips accents and ignores surrounding whitespace, so `embed('Steel')`, `embed('steel')` and `embed('  steel  ')` are the same vector, and `embed('café')` matches `embed('cafe' || chr(769))`. You do not have to normalise a column before embedding it. Word order still matters, and different words still give different vectors.
+The bundled tokenizer lowercases, strips accents and ignores surrounding whitespace, so `subtoken_embed('Steel')`, `subtoken_embed('steel')` and `subtoken_embed('  steel  ')` are the same vector, and `subtoken_embed('café')` matches `subtoken_embed('cafe' || chr(769))`. You do not have to normalise a column before embedding it. Word order still matters, and different words still give different vectors.
 
 The cache keys on the exact input bytes rather than on the tokenizer's folded form, so those variants do occupy separate cache entries. That is deliberate: reproducing a dependency's normalisation in the cache would mean a tokenizer bump quietly changing which inputs share an entry, and the failure would be a vector returned for text nobody embedded.
 
 ### Repeating a query does not re-embed, up to a stated number of distinct values
 
-Vectors are cached against the exact input bytes and a digest of the bundled model's own files, so re-running a query re-embeds nothing — **for as many distinct values as the cache holds**, and a future build with different weights cannot serve you the old ones. `staticembed_cache_stats()` is how you see which case you are in rather than guessing from how long the query took:
+Vectors are cached against the exact input bytes and a digest of the bundled model's own files, so re-running a query re-embeds nothing — **for as many distinct values as the cache holds**, and a future build with different weights cannot serve you the old ones. `subtoken_cache_stats()` is how you see which case you are in rather than guessing from how long the query took:
 
 ```sql
-SELECT staticembed_cache_clear();
-CREATE TABLE v AS SELECT embed(description) FROM corpus;
-SELECT staticembed_cache_stats();   -- uncached 0 means the column fitted, and
+SELECT subtoken_cache_clear();
+CREATE TABLE v AS SELECT subtoken_embed(description) FROM corpus;
+SELECT subtoken_cache_stats();   -- uncached 0 means the column fitted, and
                                     -- then encoded is one per distinct value
-CREATE TABLE w AS SELECT embed(description) FROM corpus;
-SELECT staticembed_cache_stats();   -- encoded unchanged, if uncached was 0
+CREATE TABLE w AS SELECT subtoken_embed(description) FROM corpus;
+SELECT subtoken_cache_stats();   -- encoded unchanged, if uncached was 0
 ```
 
 **The bound.** The cache spends a fixed memory budget — 64 MiB — so it holds `capacity` vectors and no more. Once it is full it **stops admitting new values rather than evicting old ones**, and `uncached` counts every lookup it turned away.
 
-`staticembed_cache_stats().capacity` is the only place to read the figure, and there is a reason it is not written down here: it depends on the model's vector width and on how your platform's allocator rounds. The extension measures the second of those at startup by allocating one block and asking, rather than assuming, so the same build lands on different capacities on macOS and Linux. A test fills a cache and asks the allocator how many bytes the process is holding, so the budget is a measurement rather than a promise about arithmetic.
+`subtoken_cache_stats().capacity` is the only place to read the figure, and there is a reason it is not written down here: it depends on the model's vector width and on how your platform's allocator rounds. The extension measures the second of those at startup by allocating one block and asking, rather than assuming, so the same build lands on different capacities on macOS and Linux. A test fills a cache and asks the allocator how many bytes the process is holding, so the budget is a measurement rather than a promise about arithmetic.
 
 The budget is a ceiling on what the cache **holds**, not on its peak. When the internal map doubles its bucket array it briefly holds the old array alongside the new one, so the high-water mark during a fill can sit above the budget by up to half the final array — under a tenth of the budget, and asserted as such.
 
@@ -120,7 +120,7 @@ That choice is the whole behaviour above the bound, so it is worth being plain a
 
 Above the bound the guarantee is weaker in a second way as well: a value the cache turned away is re-embedded for every row that carries it, and two threads meeting the same turned-away value will each embed it. Below the bound neither happens — one encode per distinct value, whatever the thread count.
 
-What it costs is adaptivity: the values kept are the ones seen first in the session, so if you move on to a different column the cache stays full of the old one. `SELECT staticembed_cache_clear();` empties it, and a non-zero `uncached` is the sign that it is time.
+What it costs is adaptivity: the values kept are the ones seen first in the session, so if you move on to a different column the cache stays full of the old one. `SELECT subtoken_cache_clear();` empties it, and a non-zero `uncached` is the sign that it is time.
 
 ## Building it
 
@@ -140,7 +140,7 @@ make mutation-check   # break the code on purpose and require the tests to notic
 The model is compiled into the binary, so the artifact is large — most of it is weights. Loading it needs `duckdb -unsigned` until a signed build exists in the community registry:
 
 ```sql
-LOAD 'build/staticembed.duckdb_extension';
+LOAD 'build/subtoken.duckdb_extension';
 ```
 
 
@@ -148,7 +148,7 @@ LOAD 'build/staticembed.duckdb_extension';
 
 Early. The extension builds, loads and answers queries; nothing is published to the community registry yet, so the `INSTALL ... FROM community` line at the top of this page does not work today. Build it yourself with `make extension` in the meantime.
 
-`description.yml` at the root of this repository is the registry entry, ready to be copied to `extensions/staticembed/description.yml` in [duckdb/community-extensions](https://github.com/duckdb/community-extensions), and `.github/workflows/MainDistributionPipeline.yml` runs the same build that registry would run. Submitting it is a separate decision and has not been taken.
+`description.yml` at the root of this repository is the registry entry, ready to be copied to `extensions/subtoken/description.yml` in [duckdb/community-extensions](https://github.com/duckdb/community-extensions), and `.github/workflows/MainDistributionPipeline.yml` runs the same build that registry would run. Submitting it is a separate decision and has not been taken.
 
 ## The model
 

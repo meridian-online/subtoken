@@ -98,7 +98,7 @@ WHAT THE UNIVERSAL-QUANTIFIER SCAN COVERS, AND WHAT IT CANNOT SEE
 
     It is scoped to the two quality sections and not to the whole page. The rest
     of `README.md` is full of true universals about a deterministic function
-    ("`embed(NULL)` is always NULL"), and a scan that cried wolf there would be
+    ("`subtoken_embed(NULL)` is always NULL"), and a scan that cried wolf there would be
     turned off. The speed ban in assertion 8 is the one that runs page-wide and
     into the code examples, because that is where its defects were planted.
 
@@ -386,7 +386,7 @@ ALLOWED_UNIVERSALS: list[Universal] = [
     Universal(
         "any phrase and its shuffle land in the same place",
         "permutation invariance is a property of the arithmetic mean rather than a sample of "
-        "it. `crates/staticembed-core` pools by averaging token vectors; "
+        "it. `crates/subtoken-core` pools by averaging token vectors; "
         "`the_pool_is_a_mean_so_order_is_lost_and_repetition_is_not` asserts it in Rust and "
         "`test/sql/06_text_the_tokenizer_treats_as_one_value.sql` asserts it against a loaded "
         "extension, so this quantifies over inputs nobody tried",
@@ -935,7 +935,7 @@ def stage_tree(root: pathlib.Path, tree: dict[str, str]) -> None:
     (root / DESCRIPTOR).write_text(
         yaml.safe_dump(
             {
-                "extension": {"name": "staticembed", "description": tree["blurb"]},
+                "extension": {"name": "subtoken", "description": tree["blurb"]},
                 "docs": {
                     "hello_world": tree["hello_world"],
                     "extended_description": tree["extended"],
@@ -1422,7 +1422,7 @@ def self_test() -> int:  # noqa: C901
         # and a ban read after `strip_noise` had already looked at none of it.
         (
             "a speed claim in a comment inside a fenced example",
-            "## The SQL surface\n\n```sql\n-- 50,000 rows per second\nSELECT embed(name) FROM t;\n```",
+            "## The SQL surface\n\n```sql\n-- 50,000 rows per second\nSELECT subtoken_embed(name) FROM t;\n```",
         ),
         (
             "a speed claim inside an inline code span",
@@ -1442,7 +1442,7 @@ def self_test() -> int:  # noqa: C901
         # SOURCE.md` this way.
         ("a relative link target", "see [the note](notes/10x-faster-embeddings.md)"),
         ("a bare URL", "see https://example.invalid/faster-than-sbert for the write-up"),
-        ("a fenced example with no claim in it", "```sql\nSELECT embed('a') FROM t;\n```"),
+        ("a fenced example with no claim in it", "```sql\nSELECT subtoken_embed('a') FROM t;\n```"),
     ):
         if page_problems("a_file", text) != []:
             print(
@@ -1559,18 +1559,18 @@ def self_test() -> int:  # noqa: C901
 
     allowance_line = "any phrase and its shuffle land in the same place."
     readme_page = (
-        "# staticembed\n\nA vector for a string, from a model bundled in the binary.\n\n"
+        "# subtoken\n\nA vector for a string, from a model bundled in the binary.\n\n"
         f"## {SECTION_HEADING}\n\n{good}\n"
-        "## The SQL surface\n\n`embed()` is a scalar function.\n"
+        "## The SQL surface\n\n`subtoken_embed()` is a scalar function.\n"
     )
     extended_page = (
-        "`staticembed` turns a string into a vector inside DuckDB.\n\n"
+        "`subtoken` turns a string into a vector inside DuckDB.\n\n"
         f"## {SECTION_HEADING}\n\n{good}\n"
     )
     clean_tree = {
         "readme": readme_page,
         "blurb": "Static text embeddings as a DuckDB scalar, from a model in the binary",
-        "hello_world": "-- 256 floats per row, for this model.\nSELECT embed(name) FROM t;\n",
+        "hello_world": "-- 256 floats per row, for this model.\nSELECT subtoken_embed(name) FROM t;\n",
         "extended": extended_page,
         "revision": MEASURED_ON_REVISION,
     }
@@ -1651,8 +1651,8 @@ def self_test() -> int:  # noqa: C901
             "a speed figure in the README, three headings below the quality section",
             {
                 "readme": readme_page.replace(
-                    "`embed()` is a scalar function.",
-                    "`embed()` is a scalar function. It embeds 50,000 rows per second.",
+                    "`subtoken_embed()` is a scalar function.",
+                    "`subtoken_embed()` is a scalar function. It embeds 50,000 rows per second.",
                 )
             },
             f"{README} contains 'per second'",
@@ -1667,7 +1667,7 @@ def self_test() -> int:  # noqa: C901
             "a speed figure in the registry entry's published SQL example",
             {
                 "hello_world": "-- 256 floats per row, and 50,000 rows per second.\n"
-                "SELECT embed(name) FROM t;\n"
+                "SELECT subtoken_embed(name) FROM t;\n"
             },
             f"{DESCRIPTOR} (the rendered page) contains 'per second'",
         ),

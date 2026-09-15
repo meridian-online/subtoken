@@ -37,7 +37,7 @@
 //! not collapse as the column grows. What it costs is adaptivity: the resident
 //! set is whatever was seen first in the session, so a session that moves on to
 //! a different column keeps the old one until someone calls
-//! `staticembed_cache_clear()`. [`CacheStats::uncached`] is how a caller sees
+//! `subtoken_cache_clear()`. [`CacheStats::uncached`] is how a caller sees
 //! that this is happening rather than inferring it from a slow query.
 
 use std::collections::HashMap;
@@ -47,7 +47,7 @@ use std::sync::{Arc, Mutex};
 use sha2::{Digest, Sha256};
 
 /// Domain tag mixed into every cache key.
-const CACHE_KEY_DOMAIN: &[u8] = b"staticembed/cache-key/v1";
+const CACHE_KEY_DOMAIN: &[u8] = b"subtoken/cache-key/v1";
 
 /// Memory the cache may spend, in bytes.
 ///
@@ -59,7 +59,7 @@ const CACHE_KEY_DOMAIN: &[u8] = b"staticembed/cache-key/v1";
 /// 64 MiB is modest beside DuckDB's own default, which is most of the machine.
 /// How many vectors it buys is not fixed and is not written down here: it
 /// depends on the model's width and on how the platform's allocator rounds, so
-/// `staticembed_cache_stats().capacity` is the only place to read it.
+/// `subtoken_cache_stats().capacity` is the only place to read it.
 pub const DEFAULT_BUDGET_BYTES: usize = 64 * 1024 * 1024;
 
 /// A cache key: a 32-byte digest of the model identity and the input text.
@@ -362,7 +362,7 @@ impl EmbeddingCache {
         let dropped = self.entries.len() as u64;
         // Replaced rather than cleared: `HashMap::clear` keeps the bucket array,
         // which at a full cache is megabytes. Someone calling
-        // `staticembed_cache_clear()` is asking for the memory back.
+        // `subtoken_cache_clear()` is asking for the memory back.
         self.entries = HashMap::new();
         self.hits = 0;
         self.misses = 0;

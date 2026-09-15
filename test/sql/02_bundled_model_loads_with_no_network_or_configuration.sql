@@ -8,25 +8,25 @@
 -- dependency tree at all — is scripts/check_no_network_deps.py.
 
 SELECT must('the extension names the model it bundles',
-    staticembed_version() LIKE '%minishlab/potion-base-8M%');
+    subtoken_version() LIKE '%minishlab/potion-base-8M%');
 
 SELECT must('the extension reports the revision the assets were pinned at',
-    staticembed_version() LIKE '%bf8b056651a2%');
+    subtoken_version() LIKE '%bf8b056651a2%');
 
 SELECT must('the extension reports a positive vector width',
-    CAST(regexp_extract(staticembed_version(), 'dim (\d+)', 1) AS BIGINT) > 0);
+    CAST(regexp_extract(subtoken_version(), 'dim (\d+)', 1) AS BIGINT) > 0);
 
 -- The first embedding call in this process. No LOAD-time configuration, no
 -- SET, no environment variable: the weights are in the binary.
 SELECT must('the first call returns a vector without any configuration',
-    len(embed('the first call in this process')) =
-    CAST(regexp_extract(staticembed_version(), 'dim (\d+)', 1) AS BIGINT));
+    len(subtoken_embed('the first call in this process')) =
+    CAST(regexp_extract(subtoken_version(), 'dim (\d+)', 1) AS BIGINT));
 
 -- Weights that failed to load would still produce a correctly shaped zero
 -- vector, so shape alone is not evidence the model is there.
 SELECT must('the vector is not the zero vector, so real weights were read',
-    list_max(embed('the first call in this process')) > 0
-    OR list_min(embed('the first call in this process')) < 0);
+    list_max(subtoken_embed('the first call in this process')) > 0
+    OR list_min(subtoken_embed('the first call in this process')) < 0);
 
 SELECT must('two different strings get two different vectors',
-    embed('a foundry casting valve bodies') IS DISTINCT FROM embed('a bonded warehouse operator'));
+    subtoken_embed('a foundry casting valve bodies') IS DISTINCT FROM subtoken_embed('a bonded warehouse operator'));

@@ -32,8 +32,8 @@ import sys
 from dataclasses import dataclass, field
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-CORE = "crates/staticembed-core/src"
-GLUE = "crates/staticembed-duckdb/src/lib.rs"
+CORE = "crates/subtoken-core/src"
+GLUE = "crates/subtoken-duckdb/src/lib.rs"
 
 #: The packaged artifact `make extension` writes, and which every SQL and script
 #: mutation here rebuilds from broken source. `git checkout --` puts the code
@@ -42,7 +42,7 @@ GLUE = "crates/staticembed-duckdb/src/lib.rs"
 #: measurement taken against one read `embed('steel logistics')` as
 #: order-sensitive on a tree whose own tests said otherwise. Deleted after every
 #: mutation, so the next reader has to build one rather than find one.
-ARTIFACT = "build/staticembed.duckdb_extension"
+ARTIFACT = "build/subtoken.duckdb_extension"
 
 #: The doc checks below need no build and no duckdb: they read two files in the
 #: tree. Named here so a mutation of one cannot quietly point at the other.
@@ -555,7 +555,7 @@ MUTATIONS: list[Mutation] = [
             "python3",
             "scripts/check_documented_surface.py",
             "--extension",
-            "build/staticembed.duckdb_extension",
+            "build/subtoken.duckdb_extension",
             "--duckdb",
             "$DUCKDB",
         ],
@@ -570,7 +570,7 @@ MUTATIONS: list[Mutation] = [
             "python3",
             "scripts/check_documented_surface.py",
             "--extension",
-            "build/staticembed.duckdb_extension",
+            "build/subtoken.duckdb_extension",
             "--duckdb",
             "$DUCKDB",
         ],
@@ -947,8 +947,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_version_line_stops_naming_the_model",
         file=f"{CORE}/lib.rs",
-        old='            "staticembed {} (model {}@{}, key {}, dim {})",\n            VERSION,\n            model::MODEL_ID,',
-        new='            "staticembed {} (model {}@{}, key {}, dim {})",\n            VERSION,\n            "a model",',
+        old='            "subtoken {} (model {}@{}, key {}, dim {})",\n            VERSION,\n            model::MODEL_ID,',
+        new='            "subtoken {} (model {}@{}, key {}, dim {})",\n            VERSION,\n            "a model",',
         expect_red="describe_names_the_bundled_model_and_the_width",
     ),
     # ── one encode per distinct value, under threads ─────────────────────────
@@ -997,7 +997,7 @@ MUTATIONS: list[Mutation] = [
         name="sql_null_stops_propagating_and_becomes_a_zero_vector",
         file=GLUE,
         old="                Cell::Null => vectors.push(None),",
-        new='                Cell::Null => vectors.push(Some(staticembed_core::embed("")?)),',
+        new='                Cell::Null => vectors.push(Some(subtoken_core::embed("")?)),',
         expect_red="04_null_and_empty",
         kind="sql",
     ),
@@ -1020,8 +1020,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_scalar_stops_using_the_cache",
         file=GLUE,
-        old="Cell::Text(text) => vectors.push(Some(staticembed_core::embed(text)?)),",
-        new="Cell::Text(text) => vectors.push(Some(std::sync::Arc::from(\n                    staticembed_core::embed_uncached(text)?.into_boxed_slice(),\n                ))),",
+        old="Cell::Text(text) => vectors.push(Some(subtoken_core::embed(text)?)),",
+        new="Cell::Text(text) => vectors.push(Some(std::sync::Arc::from(\n                    subtoken_core::embed_uncached(text)?.into_boxed_slice(),\n                ))),",
         expect_red="03_a_repeated_query",
         kind="sql",
     ),
@@ -1075,8 +1075,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="a_fifth_function_is_registered",
         file=GLUE,
-        old='    con.register_scalar_function::<Version>("staticembed_version")?;',
-        new='    con.register_scalar_function::<Version>("staticembed_version")?;\n    con.register_scalar_function::<Version>("embed_nearest_neighbour")?;',
+        old='    con.register_scalar_function::<Version>("subtoken_version")?;',
+        new='    con.register_scalar_function::<Version>("subtoken_version")?;\n    con.register_scalar_function::<Version>("embed_nearest_neighbour")?;',
         expect_red="05_the_registered_surface",
         kind="sql",
     ),
@@ -1182,10 +1182,10 @@ def rust_test_failed(test_name: str, mutated_file: str) -> tuple[bool, str]:
     #
     # Scoped to the crate the mutation touched. `--workspace` would relink the
     # 36 MB cdylib for every Rust mutation, and every Rust mutation is in
-    # staticembed-core; the DuckDB layer's mutations are measured through SQL.
+    # subtoken-core; the DuckDB layer's mutations are measured through SQL.
     scope = (
-        ["-p", "staticembed-core"]
-        if mutated_file.startswith("crates/staticembed-core")
+        ["-p", "subtoken-core"]
+        if mutated_file.startswith("crates/subtoken-core")
         else ["--workspace"]
     )
     completed = run(["cargo", "test", *scope, test_name, "--", "--nocapture"])
@@ -1231,7 +1231,7 @@ def sql_test_failed(name_fragment: str, duckdb: str) -> tuple[bool, str]:
             sys.executable,
             "scripts/run_sql_tests.py",
             "--extension",
-            "build/staticembed.duckdb_extension",
+            "build/subtoken.duckdb_extension",
             "--duckdb",
             duckdb,
             "--only",

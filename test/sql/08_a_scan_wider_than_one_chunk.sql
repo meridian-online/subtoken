@@ -16,14 +16,14 @@ CREATE TABLE wide AS
            END AS s
     FROM range(5000) r(i);
 
-CREATE TABLE wide_embedded AS SELECT i, s, embed(s) AS v FROM wide;
+CREATE TABLE wide_embedded AS SELECT i, s, subtoken_embed(s) AS v FROM wide;
 
 -- The reference is built from the distinct values only — 300 of them plus the
 -- empty string, one chunk — so it cannot carry a cross-chunk offset defect of
 -- its own. Comparing the wide scan against it is what makes this a test rather
 -- than two copies of the same mistake agreeing.
 CREATE TABLE reference AS
-    SELECT s, embed(s) AS v FROM (SELECT DISTINCT s FROM wide WHERE s IS NOT NULL);
+    SELECT s, subtoken_embed(s) AS v FROM (SELECT DISTINCT s FROM wide WHERE s IS NOT NULL);
 
 SELECT must('the reference fits in one chunk',
     (SELECT count(*) FROM reference) <= 2048);
@@ -43,7 +43,7 @@ SELECT must('no non-NULL row came back NULL',
 SELECT must('every non-NULL row has the full width',
     (SELECT count(*) FROM wide_embedded
      WHERE v IS NOT NULL
-       AND len(v) <> CAST(regexp_extract(staticembed_version(), 'dim (\d+)', 1) AS BIGINT)) = 0);
+       AND len(v) <> CAST(regexp_extract(subtoken_version(), 'dim (\d+)', 1) AS BIGINT)) = 0);
 
 SELECT must('the empty rows are zero vectors wherever they fall',
     (SELECT count(*) FROM wide_embedded

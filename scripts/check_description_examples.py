@@ -50,7 +50,7 @@ not.
 
 Needs PyYAML. The registry's own `scripts/build.py` does too.
 
-    scripts/check_description_examples.py --extension build/staticembed.duckdb_extension
+    scripts/check_description_examples.py --extension build/subtoken.duckdb_extension
     scripts/check_description_examples.py --self-test
 """
 
@@ -74,7 +74,7 @@ BUILD_JOB = "duckdb-stable-build"
 #: The job that downloads every uploaded artifact and looks at it.
 INSPECTION_JOB = "no-network"
 
-MARKER = "STATICEMBED_EXAMPLE"
+MARKER = "SUBTOKEN_EXAMPLE"
 
 PRELUDE = """\
 SET extension_directory='{extension_directory}';
@@ -504,14 +504,14 @@ def self_test() -> int:
     # where there are three.
     synthetic = """\
 extension:
-  name: staticembed
+  name: subtoken
   version: 9.9.9
 repo:
-  github: example/staticembed
+  github: example/subtoken
   ref: deadbeef
 docs:
   hello_world: |
-    SELECT embed('hello') AS hello;
+    SELECT subtoken_embed('hello') AS hello;
     -- repo: this line is prose, not a key
     SELECT 2 AS also_hello;
   extended_description: |
@@ -556,7 +556,7 @@ docs:
         )
 
         # Descriptor agreement: each of these must be reported.
-        problems = descriptor_problems(descriptor, ["embed", "a_function_the_page_never_names"])
+        problems = descriptor_problems(descriptor, ["subtoken_embed", "a_function_the_page_never_names"])
         expect("a wrong version is caught", any("extension.version" in p for p in problems))
         expect("a wrong repository is caught", any("repo.github" in p for p in problems))
         expect("an abbreviated ref is caught", any("repo.ref" in p for p in problems))
@@ -566,14 +566,14 @@ docs:
         )
         expect(
             "a function the page does name is not reported",
-            not any("'embed'" in p for p in problems),
+            not any("'subtoken_embed'" in p for p in problems),
         )
 
     # A misspelt platform exclusion, checked only when the matrix is available.
     if known_platforms() is not None:
         typo = {
             "extension": {
-                "name": "staticembed",
+                "name": "subtoken",
                 "version": "0.0.0",
                 "excluded_platforms": "wasm_mvp;windows_amd64_mingww",
             },
@@ -598,7 +598,7 @@ docs:
     real_exclusions = "wasm_mvp;wasm_eh;wasm_threads;linux_amd64_musl;linux_arm64_musl;windows_amd64_mingw"
     entry = {
         "extension": {
-            "name": "staticembed",
+            "name": "subtoken",
             "excluded_platforms": real_exclusions,
             "requires_toolchains": "rust;python3",
         }
@@ -622,7 +622,7 @@ docs:
             "duckdb-stable-build": {
                 "uses": "duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5-variegata",
                 "with": {
-                    "extension_name": "staticembed",
+                    "extension_name": "subtoken",
                     "exclude_archs": real_exclusions,
                     "extra_toolchains": "rust;python3",
                     "ci_tools_version": "v1.5-variegata",
@@ -639,7 +639,7 @@ docs:
     for field, value, needle in (
         ("exclude_archs", "wasm_mvp", "excluded_platforms"),
         ("extra_toolchains", "rust", "requires_toolchains"),
-        ("extension_name", "staticembedd", "name"),
+        ("extension_name", "subtokend", "name"),
         ("ci_tools_version", "v1.5.5", "ci_tools_version"),
         ("duckdb_version", "v1.5.4", "DUCKDB_VERSION"),
         ("opt_in_archs", "windows_arm64", "opt_in_platforms"),
