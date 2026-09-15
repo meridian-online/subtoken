@@ -5,7 +5,7 @@
 -- `subtoken_models()` for the rest of the row, and a predicate that detects a
 -- mismatch without reading a single vector.
 --
--- The Protocol side of the estate already refuses a model mismatch and names
+-- The Python caller in `arcform` already refuses a model mismatch and names
 -- both sides. Until these two functions the SQL session could not detect one,
 -- because the only route to the key was twelve hex characters inside a
 -- free-text version sentence, and nothing can join on a sentence.
