@@ -15,7 +15,7 @@ Three files are bundled — the weights, the tokenizer, and the config. The conf
 | `tokenizer.json` | `e67e803f624fb4d67dea1c730d06e1067e1b14d830e2c2202569e3ef0f70bb50` |
 | `config.json` | `2a6ac0e9aaa356a68a5688070db78fc3a464fefe85d2f06a1905ce3718687553` |
 
-`cargo test -p staticembed-core bundled_asset_digests_match_the_pinned_release` recomputes all three and compares them against the constants in `crates/staticembed-core/src/model.rs`, so a swapped or truncated asset reddens rather than being silently embedded.
+`cargo test -p subtoken-core bundled_asset_digests_match_the_pinned_release` recomputes all three and compares them against the constants in `crates/subtoken-core/src/model.rs`, so a swapped or truncated asset reddens rather than being silently embedded.
 
 **Those constants were checked against the publisher's own hashes, not only against the files as downloaded.** Hugging Face serves the SHA-256 of an LFS object in the `x-linked-etag` header and the git blob SHA-1 of a small file in `etag`, so all three can be confirmed without trusting the download:
 

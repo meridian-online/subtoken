@@ -1,7 +1,7 @@
 //! Clearing the cache gives the memory back, including the map's buckets.
 //!
 //! `HashMap::clear` keeps the bucket array, which at a full cache is megabytes,
-//! so `staticembed_cache_clear()` was holding memory back from someone
+//! so `subtoken_cache_clear()` was holding memory back from someone
 //! explicitly asking for it.
 //!
 //! Its own binary for the same reason as `the_budget_is_a_measurement.rs`: a
@@ -13,7 +13,7 @@ mod counting_allocator;
 
 use std::sync::Arc;
 
-use staticembed_core::cache::{self, EmbeddingCache};
+use subtoken_core::cache::{self, EmbeddingCache};
 
 #[global_allocator]
 static COUNTING: counting_allocator::Counting = counting_allocator::Counting;

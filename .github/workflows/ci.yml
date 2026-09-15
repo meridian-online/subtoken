@@ -80,7 +80,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       # The model, the cache and the embedding contract. No DuckDB involved:
-      # staticembed-core links none of it.
+      # subtoken-core links none of it.
       - name: Rust tests
         run: cargo test --workspace
 
@@ -92,18 +92,18 @@ jobs:
       - name: Nothing in the artifact can open a socket
         run: |
           python3 scripts/check_no_network_deps.py --self-test
-          python3 scripts/check_no_network_deps.py --artifact build/staticembed.duckdb_extension
+          python3 scripts/check_no_network_deps.py --artifact build/subtoken.duckdb_extension
 
       # Each copy of a signature is another chance to be wrong, and the copy on
       # the registry page is the one a stranger reads before installing.
       - name: The documented surface matches the loaded catalog
         run: |
           python3 scripts/check_documented_surface.py --self-test
-          python3 scripts/check_documented_surface.py --extension build/staticembed.duckdb_extension
+          python3 scripts/check_documented_surface.py --extension build/subtoken.duckdb_extension
 
       # LOAD the packaged artifact into a real DuckDB and query it.
       - name: SQL tests
-        run: python3 scripts/run_sql_tests.py --extension build/staticembed.duckdb_extension
+        run: python3 scripts/run_sql_tests.py --extension build/subtoken.duckdb_extension
 
       # The registry's own doc_test job carries `if: false`, so nothing upstream
       # runs the examples description.yml publishes. This does, in one session,
@@ -119,7 +119,7 @@ jobs:
       - name: The registry entry's examples run, and it describes this tree
         run: |
           python3 scripts/check_description_examples.py --self-test
-          python3 scripts/check_description_examples.py --extension build/staticembed.duckdb_extension --require-complete
+          python3 scripts/check_description_examples.py --extension build/subtoken.duckdb_extension --require-complete
 
       # The quality position, in the two files that publish it. Every figure a
       # stranger reads before installing has to be one somebody measured, the
@@ -161,7 +161,7 @@ jobs:
           python3 scripts/check_assertions_can_fail.py
 
       - name: Report the artifact size
-        run: ls -l build/staticembed.duckdb_extension
+        run: ls -l build/subtoken.duckdb_extension
 
   # The recipe duckdb/community-extensions runs, exercised here on every change
   # rather than only when the full distribution matrix runs. `make configure`

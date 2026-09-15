@@ -1,21 +1,21 @@
-# staticembed — build, package and test the DuckDB extension.
+# subtoken — build, package and test the DuckDB extension.
 #
 # `make check` is the whole gate, and it is what .github/workflows/ci.yml runs.
 
-EXTENSION_NAME := staticembed
+EXTENSION_NAME := subtoken
 # The stable C_STRUCT ABI floor the packaged artifact declares, so one build
 # loads on DuckDB 1.2 and later. Mirrors MIN_DUCKDB_VERSION in
-# crates/staticembed-duckdb/src/lib.rs.
+# crates/subtoken-duckdb/src/lib.rs.
 TARGET_DUCKDB_VERSION := v1.2.0
 EXTENSION_VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 
 UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_S),Darwin)
-	LIB_FILE := libstaticembed.dylib
+	LIB_FILE := libsubtoken.dylib
 	UNAME_PLATFORM := $(if $(filter arm64,$(UNAME_M)),osx_arm64,osx_amd64)
 else
-	LIB_FILE := libstaticembed.so
+	LIB_FILE := libsubtoken.so
 	UNAME_PLATFORM := $(if $(filter aarch64,$(UNAME_M)),linux_arm64,linux_amd64)
 endif
 
@@ -136,7 +136,7 @@ clean:
 # `make extension` above is the local convenience path and is a different
 # recipe: it packages the whole-workspace `cargo build --release` with this
 # repo's own metadata script, while the contract below builds only
-# `staticembed-duckdb` and stamps the trailer with extension-ci-tools' script.
+# `subtoken-duckdb` and stamps the trailer with extension-ci-tools' script.
 # Two recipes that agree today is exactly what an acceptance criterion warned
 # against, so `make community-check` builds both and
 # `scripts/check_artifact_version.py --compare` fails when the trailers they
@@ -206,17 +206,17 @@ configure: venv platform extension_version
 release: extension_version build_extension_library_release build_extension_with_metadata_release
 debug:   extension_version build_extension_library_debug   build_extension_with_metadata_debug
 
-## Only the cdylib, not the whole workspace: staticembed-core's dev-dependencies
+## Only the cdylib, not the whole workspace: subtoken-core's dev-dependencies
 ## and test binaries have no business in a distribution build.
 build_extension_library_release: check_configure
 	DUCKDB_EXTENSION_NAME=$(EXTENSION_NAME) DUCKDB_EXTENSION_MIN_DUCKDB_VERSION=$(TARGET_DUCKDB_VERSION) \
-		cargo build -p staticembed-duckdb --release $(COMMUNITY_CARGO_TARGET)
+		cargo build -p subtoken-duckdb --release $(COMMUNITY_CARGO_TARGET)
 	mkdir -p $(EXTENSION_BUILD_PATH)/release/extension/$(EXTENSION_NAME)
 	cp $(COMMUNITY_CARGO_OUT)/release/$(EXTENSION_LIB_FILENAME) $(EXTENSION_BUILD_PATH)/release/$(EXTENSION_LIB_FILENAME)
 
 build_extension_library_debug: check_configure
 	DUCKDB_EXTENSION_NAME=$(EXTENSION_NAME) DUCKDB_EXTENSION_MIN_DUCKDB_VERSION=$(TARGET_DUCKDB_VERSION) \
-		cargo build -p staticembed-duckdb $(COMMUNITY_CARGO_TARGET)
+		cargo build -p subtoken-duckdb $(COMMUNITY_CARGO_TARGET)
 	mkdir -p $(EXTENSION_BUILD_PATH)/debug/extension/$(EXTENSION_NAME)
 	cp $(COMMUNITY_CARGO_OUT)/debug/$(EXTENSION_LIB_FILENAME) $(EXTENSION_BUILD_PATH)/debug/$(EXTENSION_LIB_FILENAME)
 

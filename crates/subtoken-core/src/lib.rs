@@ -227,14 +227,14 @@ pub fn clear_cache() -> u64 {
 pub fn describe() -> String {
     match model::bundled() {
         Ok(model) => format!(
-            "staticembed {} (model {}@{}, key {}, dim {})",
+            "subtoken {} (model {}@{}, key {}, dim {})",
             VERSION,
             model::MODEL_ID,
             &model::MODEL_REVISION[..12],
             &model.key_hex()[..12],
             model.dim()
         ),
-        Err(message) => format!("staticembed {VERSION} (model unavailable: {message})"),
+        Err(message) => format!("subtoken {VERSION} (model unavailable: {message})"),
     }
 }
 

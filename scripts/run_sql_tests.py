@@ -19,7 +19,7 @@ sandbox, and the dependency-tree half of that claim is
 
 Stdlib only.
 
-    scripts/run_sql_tests.py --extension build/staticembed.duckdb_extension
+    scripts/run_sql_tests.py --extension build/subtoken.duckdb_extension
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ SET extension_directory='{extension_directory}';
 CREATE OR REPLACE MACRO must(label, condition) AS
     CASE WHEN condition IS TRUE THEN label
          ELSE error('ASSERTION FAILED: ' || label) END;
-CREATE TABLE staticembed_baseline_functions AS
+CREATE TABLE subtoken_baseline_functions AS
     SELECT DISTINCT function_name FROM duckdb_functions();
 LOAD '{extension}';
 """

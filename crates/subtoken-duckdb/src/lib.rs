@@ -1,16 +1,16 @@
-//! The `staticembed` DuckDB extension.
+//! The `subtoken` DuckDB extension.
 //!
 //! The whole registered surface is five functions:
 //!
 //! | function | returns | why it exists |
 //! |---|---|---|
-//! | `embed(text VARCHAR)` | `FLOAT[]` | the product: one row in, one vector out |
-//! | `embed_is_truncated(text VARCHAR)` | `BOOLEAN` | whether `embed(text)` had to drop content to fit |
-//! | `staticembed_version()` | `VARCHAR` | which build, which model, which width |
-//! | `staticembed_cache_stats()` | `STRUCT(hits, misses, encoded, uncached, entries, capacity)` | makes "did it re-embed?" answerable in SQL |
-//! | `staticembed_cache_clear()` | `BIGINT` | vectors dropped; lets a session start from a known state |
+//! | `subtoken_embed(text VARCHAR)` | `FLOAT[]` | the product: one row in, one vector out |
+//! | `subtoken_is_truncated(text VARCHAR)` | `BOOLEAN` | whether `subtoken_embed(text)` had to drop content to fit |
+//! | `subtoken_version()` | `VARCHAR` | which build, which model, which width |
+//! | `subtoken_cache_stats()` | `STRUCT(hits, misses, encoded, uncached, entries, capacity)` | makes "did it re-embed?" answerable in SQL |
+//! | `subtoken_cache_clear()` | `BIGINT` | vectors dropped; lets a session start from a known state |
 //!
-//! `embed` is a **scalar**, and that is the product argument rather than an
+//! `subtoken_embed` is a **scalar**, and that is the product argument rather than an
 //! implementation detail: a scalar composes with `WHERE` and `LIMIT`, so a
 //! filtered subset of a table can be embedded without materialising the rest,
 //! and it behaves the same over a local Parquet file as over a remote table.
@@ -24,27 +24,27 @@
 //!
 //! # NULL
 //!
-//! `embed(NULL)` is `NULL`. Text with no in-vocabulary tokens — `''`,
+//! `subtoken_embed(NULL)` is `NULL`. Text with no in-vocabulary tokens — `''`,
 //! whitespace, a string of symbols outside the vocabulary — is a zero vector of
 //! full width, because that is what the mean over zero tokens is. The two cases
 //! are different on purpose: absence of a value is not the same as a value that
 //! carries no signal. A caller that wants the pipeline's single behaviour for
-//! both writes `embed(coalesce(t, ''))`.
+//! both writes `subtoken_embed(coalesce(t, ''))`.
 //!
 //! # Truncation
 //!
-//! `embed` builds its vector from at most 512 tokens of `text`, and from a
+//! `subtoken_embed` builds its vector from at most 512 tokens of `text`, and from a
 //! bounded number of its characters before that; anything past either is
 //! discarded before the mean, and the vector that comes back is full width and
 //! unit norm either way, so a truncated result looks exactly like a complete
 //! one. Which limit bites first is a property of the text: for URLs,
 //! run-together identifiers and compound words the character cut lands well
 //! before 512 tokens are reached, and for Korean the token cap arrives after a
-//! few hundred characters. `embed_is_truncated(text)` answers "did this
+//! few hundred characters. `subtoken_is_truncated(text)` answers "did this
 //! happen" directly, without asking the caller to know either limit — and it
 //! answers no for a text that is past a cut but lost nothing to it, which is
-//! the question an analyst is actually asking. `embed_is_truncated(NULL)` is
-//! `NULL`, matching `embed(NULL)`.
+//! the question an analyst is actually asking. `subtoken_is_truncated(NULL)` is
+//! `NULL`, matching `subtoken_embed(NULL)`.
 
 use std::error::Error;
 use std::ffi::CString;
@@ -155,7 +155,7 @@ fn write_bool_column(
     Ok(())
 }
 
-/// `embed(text VARCHAR) → FLOAT[]`
+/// `subtoken_embed(text VARCHAR) → FLOAT[]`
 ///
 /// The vector for one string, from the model bundled in this binary. No network
 /// call, no API key, no configuration: the model is parsed out of the binary on
@@ -175,7 +175,7 @@ impl VScalar for Embed {
         for cell in &cells {
             match cell {
                 Cell::Null => vectors.push(None),
-                Cell::Text(text) => vectors.push(Some(staticembed_core::embed(text)?)),
+                Cell::Text(text) => vectors.push(Some(subtoken_core::embed(text)?)),
             }
         }
         write_float_lists(output, &vectors)
@@ -189,9 +189,9 @@ impl VScalar for Embed {
     }
 }
 
-/// `embed_is_truncated(text VARCHAR) → BOOLEAN`
+/// `subtoken_is_truncated(text VARCHAR) → BOOLEAN`
 ///
-/// True if `embed(text)` dropped content, so the vector it returns does not
+/// True if `subtoken_embed(text)` dropped content, so the vector it returns does not
 /// reflect all of `text` — even though it is full width and unit norm like any
 /// other. False for a text that ran past a limit without losing an id to it.
 /// See the module docs' *Truncation* section for the limits and what a caller
@@ -211,7 +211,7 @@ impl VScalar for IsTruncated {
         for cell in &cells {
             match cell {
                 Cell::Null => rows.push(None),
-                Cell::Text(text) => rows.push(Some(staticembed_core::is_truncated(text)?)),
+                Cell::Text(text) => rows.push(Some(subtoken_core::is_truncated(text)?)),
             }
         }
         write_bool_column(output, &rows)
@@ -225,7 +225,7 @@ impl VScalar for IsTruncated {
     }
 }
 
-/// `staticembed_version() → VARCHAR`
+/// `subtoken_version() → VARCHAR`
 struct Version;
 
 impl VScalar for Version {
@@ -236,7 +236,7 @@ impl VScalar for Version {
         input: &mut DataChunkHandle,
         output: &mut dyn WritableVector,
     ) -> Result<(), Box<dyn Error>> {
-        let text = CString::new(staticembed_core::describe())?;
+        let text = CString::new(subtoken_core::describe())?;
         let vector = output.flat_vector();
         for row in 0..input.len().max(1) {
             vector.insert(row, text.clone());
@@ -252,10 +252,10 @@ impl VScalar for Version {
     }
 }
 
-/// `staticembed_cache_stats() → STRUCT(hits, misses, encoded, uncached, entries, capacity)`
+/// `subtoken_cache_stats() → STRUCT(hits, misses, encoded, uncached, entries, capacity)`
 ///
 /// `encoded` is the number of times the encoder has actually run since the last
-/// `staticembed_cache_clear()`. It is the observable behind "a repeated query
+/// `subtoken_cache_clear()`. It is the observable behind "a repeated query
 /// does not re-embed": run a query twice and `encoded` does not move.
 ///
 /// `uncached` is how many lookups the cache was too full to store. Non-zero
@@ -264,7 +264,7 @@ impl VScalar for Version {
 /// `encoded` legitimately moves on a repeat.
 struct CacheStats;
 
-/// Field order of the STRUCT `staticembed_cache_stats()` returns. The order is
+/// Field order of the STRUCT `subtoken_cache_stats()` returns. The order is
 /// part of the signature, so it is written once and used for both the type and
 /// the write.
 const STATS_FIELDS: [&str; 6] = [
@@ -279,7 +279,7 @@ impl VScalar for CacheStats {
         input: &mut DataChunkHandle,
         output: &mut dyn WritableVector,
     ) -> Result<(), Box<dyn Error>> {
-        let stats = staticembed_core::stats();
+        let stats = subtoken_core::stats();
         let values = [
             stats.hits,
             stats.misses,
@@ -320,7 +320,7 @@ impl VScalar for CacheStats {
     }
 }
 
-/// `staticembed_cache_clear() → BIGINT` — vectors dropped.
+/// `subtoken_cache_clear() → BIGINT` — vectors dropped.
 struct CacheClear;
 
 impl VScalar for CacheClear {
@@ -331,7 +331,7 @@ impl VScalar for CacheClear {
         input: &mut DataChunkHandle,
         output: &mut dyn WritableVector,
     ) -> Result<(), Box<dyn Error>> {
-        let dropped = staticembed_core::clear_cache() as i64;
+        let dropped = subtoken_core::clear_cache() as i64;
         let rows = input.len().max(1);
         let mut vector = output.flat_vector();
         // SAFETY: the output vector holds at least `rows` BIGINT slots by the
@@ -360,11 +360,11 @@ impl VScalar for CacheClear {
 /// # Safety
 /// The connection must be valid for the lifetime of the extension.
 pub unsafe fn extension_entrypoint(con: duckdb::Connection) -> Result<(), Box<dyn Error>> {
-    con.register_scalar_function::<Embed>("embed")?;
-    con.register_scalar_function::<IsTruncated>("embed_is_truncated")?;
-    con.register_scalar_function::<Version>("staticembed_version")?;
-    con.register_scalar_function::<CacheStats>("staticembed_cache_stats")?;
-    con.register_scalar_function::<CacheClear>("staticembed_cache_clear")?;
+    con.register_scalar_function::<Embed>("subtoken_embed")?;
+    con.register_scalar_function::<IsTruncated>("subtoken_is_truncated")?;
+    con.register_scalar_function::<Version>("subtoken_version")?;
+    con.register_scalar_function::<CacheStats>("subtoken_cache_stats")?;
+    con.register_scalar_function::<CacheClear>("subtoken_cache_clear")?;
     Ok(())
 }
 
@@ -400,7 +400,7 @@ pub unsafe fn init_extension(
 /// # Safety
 /// The symbol DuckDB calls when loading the extension.
 #[no_mangle]
-pub unsafe extern "C" fn staticembed_init_c_api(
+pub unsafe extern "C" fn subtoken_init_c_api(
     info: duckdb::ffi::duckdb_extension_info,
     access: *const duckdb::ffi::duckdb_extension_access,
 ) -> bool {
@@ -412,7 +412,7 @@ pub unsafe extern "C" fn staticembed_init_c_api(
                     Ok(message) => set_error(info, message.as_ptr()),
                     Err(_) => set_error(
                         info,
-                        c"staticembed failed to load, and the reason could not be converted to a C string"
+                        c"subtoken failed to load, and the reason could not be converted to a C string"
                             .as_ptr(),
                     ),
                 }

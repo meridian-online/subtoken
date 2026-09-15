@@ -2,7 +2,7 @@
 """Turn a compiled cdylib into a loadable `.duckdb_extension`.
 
 DuckDB refuses to `LOAD` a shared library that does not carry its metadata
-trailer, so the raw `libstaticembed.dylib` cargo produces is not yet an
+trailer, so the raw `libsubtoken.dylib` cargo produces is not yet an
 extension. The trailer is a 534-byte WebAssembly custom section named
 `duckdb_signature`: eight 32-byte null-padded ASCII fields written in reverse
 order, then 256 zero bytes reserved for a signature the community registry adds
@@ -11,8 +11,8 @@ when it signs a build.
 Stdlib only, so `make test` needs no virtualenv.
 
     scripts/append_extension_metadata.py \\
-        --library-file target/release/libstaticembed.dylib \\
-        --out-file build/staticembed.duckdb_extension \\
+        --library-file target/release/libsubtoken.dylib \\
+        --out-file build/subtoken.duckdb_extension \\
         --platform osx_arm64 --duckdb-version v1.2.0 --extension-version 0.1.0
 """
 

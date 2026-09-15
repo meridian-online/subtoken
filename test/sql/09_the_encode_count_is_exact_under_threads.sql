@@ -17,9 +17,9 @@ SELECT must('this test really is running with eight threads',
 
 CREATE TABLE hot AS SELECT 'value ' || (i % 10) AS s FROM range(400000) r(i);
 
-SELECT staticembed_cache_clear();
-CREATE TABLE hot_embedded AS SELECT embed(s) AS v FROM hot;
-CREATE TABLE threaded AS SELECT staticembed_cache_stats() AS s;
+SELECT subtoken_cache_clear();
+CREATE TABLE hot_embedded AS SELECT subtoken_embed(s) AS v FROM hot;
+CREATE TABLE threaded AS SELECT subtoken_cache_stats() AS s;
 
 SELECT must('ten distinct values over 400,000 rows encode exactly ten times',
     (SELECT s.encoded FROM threaded) = 10);
@@ -31,9 +31,9 @@ SELECT must('the cache holds one entry per distinct value',
 -- And the vectors are right, not merely counted: a race that handed one thread
 -- another's buffer would keep the counts and corrupt the values.
 CREATE TABLE hot_reference AS
-    SELECT s, embed(s) AS v FROM (SELECT DISTINCT s FROM hot);
+    SELECT s, subtoken_embed(s) AS v FROM (SELECT DISTINCT s FROM hot);
 SELECT must('every threaded row carries its own text''s vector',
     (SELECT count(*) FROM (SELECT DISTINCT s, v FROM (
-        SELECT s, embed(s) AS v FROM hot
+        SELECT s, subtoken_embed(s) AS v FROM hot
      )) t JOIN hot_reference r ON t.s = r.s
      WHERE t.v IS DISTINCT FROM r.v) = 0);

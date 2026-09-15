@@ -46,7 +46,7 @@ pub const MAX_TOKENS: usize = 512;
 
 /// Domain tag mixed into the model key so the digest cannot be confused with a
 /// plain SHA-256 of any one asset.
-const MODEL_KEY_DOMAIN: &[u8] = b"staticembed/model-key/v1";
+const MODEL_KEY_DOMAIN: &[u8] = b"subtoken/model-key/v1";
 
 /// Derive a model's content address from the three asset files it is made of.
 ///
@@ -541,7 +541,7 @@ mod tests {
     }
 
     /// AC1 + AC3 + AC5: the *character* boundary between "clipped" and "not" —
-    /// the one `embed_is_truncated` used to be structurally blind to.
+    /// the one `subtoken_is_truncated` used to be structurally blind to.
     ///
     /// `model2vec_rs` cuts the raw string to `MAX_TOKENS * median_token_length`
     /// characters (3072, here) *before* tokenising, so text whose own
