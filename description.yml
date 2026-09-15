@@ -35,7 +35,7 @@ extension:
 
 repo:
   github: meridian-online/subtoken
-  ref: 18099ec60057099b37a38c57522c9194685c56d4
+  ref: c453860544b53803bb9b830c4818e4f1ad2d4057
 
 docs:
   hello_world: |
