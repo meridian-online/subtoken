@@ -18,6 +18,30 @@ pub const MODEL_ID: &str = "minishlab/potion-base-8M";
 /// The exact revision of that repository the bundled assets were taken at.
 pub const MODEL_REVISION: &str = "bf8b056651a2c21b8d2565580b8569da283cab23";
 
+/// The family of model that produces the vectors, as the catalogue reports it.
+///
+/// Not the crate name and not the extension name: it is the answer to "what
+/// kind of thing wrote this vector", which is the question a session asks
+/// before deciding whether a stored column can be compared with a fresh one.
+/// A transformer-backed column and a static-embedding column can carry the same
+/// width and the same number of rows and share nothing else.
+pub const MODEL_BACKEND: &str = "model2vec";
+
+/// The licence the upstream release declares for the bundled weights.
+///
+/// `models/potion-base-8M/SOURCE.md` records why no licence text travels with
+/// them: the upstream repository publishes none at the pinned revision, so this
+/// is the declaration from the model card's frontmatter and nothing more.
+pub const MODEL_LICENCE: &str = "MIT";
+
+/// What a caller may expect of this model in this build.
+///
+/// `supported` is the only value this extension emits today, because it bundles
+/// exactly one model and that model is the product. The field exists because
+/// the catalogue is the place a second model would arrive, and a row that could
+/// not say "this one is experimental" would have to be re-shaped to say it.
+pub const MODEL_TIER: &str = "supported";
+
 /// SHA-256 of `models/potion-base-8M/model.safetensors` as published.
 pub const WEIGHTS_SHA256: &str = "f65d0f325faadc1e121c319e2faa41170d3fa07d8c89abd48ca5358d9a223de2";
 /// SHA-256 of `models/potion-base-8M/tokenizer.json` as published.

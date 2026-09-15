@@ -122,6 +122,70 @@ pub fn dim() -> Result<usize, String> {
     Ok(model::bundled()?.dim())
 }
 
+/// The bundled model's content address, as 64 lowercase hex characters.
+///
+/// This is the same value [`describe`] truncates to twelve characters for its
+/// one-line sentence, at full length and on its own. The truncation is fine for
+/// a human reading a version string and useless for a column: twelve characters
+/// inside a sentence have to be recovered with a regular expression before
+/// anything can join on them, and a session that wants to know whether two
+/// columns of vectors are comparable is doing exactly that — joining.
+///
+/// It is derived from the asset bytes rather than from a version number, so a
+/// build whose weights, tokenizer or config differ reports a different id even
+/// if nobody remembered to bump anything, and a build that only changes this
+/// extension's own code reports the same one.
+pub fn model_id() -> Result<String, String> {
+    Ok(model::bundled()?.key_hex())
+}
+
+/// One row of the model catalogue.
+///
+/// Everything a session needs in order to decide whether a stored column of
+/// vectors can be compared with a fresh one, and what the model that wrote them
+/// will accept — in fields, so SQL can read them, rather than in a sentence.
+pub struct ModelRow {
+    /// The upstream repository the assets came from.
+    pub model: &'static str,
+    /// The family of model, as [`model::MODEL_BACKEND`] documents it.
+    pub backend: &'static str,
+    /// The full pinned revision of `model`, not an abbreviation of it.
+    pub revision: &'static str,
+    /// Floats in every vector this model returns — the width of the column a
+    /// caller is about to create.
+    pub width: u64,
+    /// The most tokens of a text that reach the mean. Past this,
+    /// [`is_truncated`] answers true and the vector is built from a prefix.
+    pub input_limit: u64,
+    /// The licence the upstream release declares.
+    pub licence: &'static str,
+    /// What a caller may expect of this model in this build.
+    pub tier: &'static str,
+    /// The same string [`model_id`] returns, so a stored id can be joined
+    /// against the catalogue rather than compared to a function call.
+    pub key: String,
+}
+
+/// The catalogue row for the model this build serves.
+///
+/// Each field is read from the loaded model or from the constant that governs
+/// it, never restated: `width` is the width the encoder actually produces and
+/// `key` is the loaded model's own key, so a row that has drifted from the
+/// binary is a row that cannot be built.
+pub fn catalogue() -> Result<ModelRow, String> {
+    let model = model::bundled()?;
+    Ok(ModelRow {
+        model: model::MODEL_ID,
+        backend: model::MODEL_BACKEND,
+        revision: model::MODEL_REVISION,
+        width: model.dim() as u64,
+        input_limit: model::MAX_TOKENS as u64,
+        licence: model::MODEL_LICENCE,
+        tier: model::MODEL_TIER,
+        key: model.key_hex(),
+    })
+}
+
 /// Whether [`embed`] discarded content of `text`: it pooled fewer ids than the
 /// whole of `text` would have given it, so the vector it returns does not
 /// reflect all of `text`.

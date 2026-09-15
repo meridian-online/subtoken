@@ -1,14 +1,34 @@
 //! The `subtoken` DuckDB extension.
 //!
-//! The whole registered surface is five functions:
+//! The whole registered surface is seven functions:
 //!
 //! | function | returns | why it exists |
 //! |---|---|---|
 //! | `subtoken_embed(text VARCHAR)` | `FLOAT[]` | the product: one row in, one vector out |
 //! | `subtoken_is_truncated(text VARCHAR)` | `BOOLEAN` | whether `subtoken_embed(text)` had to drop content to fit |
 //! | `subtoken_version()` | `VARCHAR` | which build, which model, which width |
+//! | `subtoken_model_id()` | `VARCHAR` | the model key, joinable: store it beside a vector column |
+//! | `subtoken_models()` | `STRUCT(model, backend, revision, width, input_limit, licence, tier, key)` | the catalogue row for the model this build serves |
 //! | `subtoken_cache_stats()` | `STRUCT(hits, misses, encoded, uncached, entries, capacity)` | makes "did it re-embed?" answerable in SQL |
 //! | `subtoken_cache_clear()` | `BIGINT` | vectors dropped; lets a session start from a known state |
+//!
+//! # Comparing vectors across a model change
+//!
+//! Vectors from two models are not comparable, and nothing about a stored
+//! column says which model wrote it: the width is the same, the norm is the
+//! same, and the numbers are plausible. `subtoken_model_id()` is the value that
+//! makes the question answerable in SQL — stored once beside the vectors, it
+//! turns "are these comparable?" into an equality a later session can put in a
+//! `WHERE` clause or raise an error on, **before** any vector is read.
+//!
+//! ```sql
+//! CREATE TABLE v AS
+//!     SELECT id, subtoken_embed(descr) AS vec, subtoken_model_id() AS model_id
+//!     FROM corpus;
+//!
+//! -- In a later session, after an upgrade:
+//! SELECT count(*) FROM v WHERE model_id <> subtoken_model_id();
+//! ```
 //!
 //! `subtoken_embed` is a **scalar**, and that is the product argument rather than an
 //! implementation detail: a scalar composes with `WHERE` and `LIMIT`, so a
@@ -252,6 +272,123 @@ impl VScalar for Version {
     }
 }
 
+/// `subtoken_model_id() → VARCHAR`
+///
+/// The full 64-hex model key, on its own. `subtoken_version()` carries the same
+/// key truncated to twelve characters inside a sentence, which is readable and
+/// not joinable; this is the value an analyst stores beside a vector column so
+/// that a later session can refuse to compare across a model change **before**
+/// comparing anything.
+struct ModelId;
+
+impl VScalar for ModelId {
+    type State = ();
+
+    fn invoke(
+        _state: &Self::State,
+        input: &mut DataChunkHandle,
+        output: &mut dyn WritableVector,
+    ) -> Result<(), Box<dyn Error>> {
+        let text = CString::new(subtoken_core::model_id()?)?;
+        let vector = output.flat_vector();
+        for row in 0..input.len().max(1) {
+            vector.insert(row, text.clone());
+        }
+        Ok(())
+    }
+
+    fn signatures() -> Vec<ScalarFunctionSignature> {
+        vec![ScalarFunctionSignature::exact(
+            vec![],
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        )]
+    }
+}
+
+/// `subtoken_models() → STRUCT(model, backend, revision, width, input_limit, licence, tier, key)`
+///
+/// The catalogue row for the model this build serves: what wrote a vector, at
+/// what revision, how wide, how much text it reads, under what licence, at what
+/// support tier, and under what key. One row today, because one model is
+/// bundled.
+///
+/// It is a **scalar returning a STRUCT rather than a table function**, and the
+/// reason is the checks rather than the ergonomics. `duckdb_functions()` reports
+/// `return_type` as NULL for a table function, and the derived-surface check
+/// that holds README.md, description.yml and this module doc to the loaded
+/// catalog compares exactly that column — a table function is invisible to it,
+/// and so is a documented return type that has drifted from the real one. The
+/// row is the same either way; this shape is the one a gate can see.
+struct Models;
+
+/// Field order of the STRUCT `subtoken_models()` returns, with the DuckDB type
+/// of each. The order is part of the signature, so it is written once and used
+/// for both the declared type and the write.
+const MODEL_FIELDS: [(&str, LogicalTypeId); 8] = [
+    ("model", LogicalTypeId::Varchar),
+    ("backend", LogicalTypeId::Varchar),
+    ("revision", LogicalTypeId::Varchar),
+    ("width", LogicalTypeId::Bigint),
+    ("input_limit", LogicalTypeId::Bigint),
+    ("licence", LogicalTypeId::Varchar),
+    ("tier", LogicalTypeId::Varchar),
+    ("key", LogicalTypeId::Varchar),
+];
+
+impl VScalar for Models {
+    type State = ();
+
+    fn invoke(
+        _state: &Self::State,
+        input: &mut DataChunkHandle,
+        output: &mut dyn WritableVector,
+    ) -> Result<(), Box<dyn Error>> {
+        let row = subtoken_core::catalogue()?;
+        // Same order as MODEL_FIELDS, and the compiler is no help if it is not:
+        // both lists are written out here so the pairing is one line apart.
+        let text: [(usize, &str); 6] = [
+            (0, row.model),
+            (1, row.backend),
+            (2, row.revision),
+            (5, row.licence),
+            (6, row.tier),
+            (7, &row.key),
+        ];
+        let numeric: [(usize, i64); 2] = [(3, row.width as i64), (4, row.input_limit as i64)];
+
+        let rows = input.len().max(1);
+        let parent = output.struct_vector();
+        for (index, value) in text {
+            let child = parent.child(index, rows);
+            let value = CString::new(value)?;
+            for slot in 0..rows {
+                child.insert(slot, value.clone());
+            }
+        }
+        for (index, value) in numeric {
+            let mut child = parent.child(index, rows);
+            // SAFETY: `rows` slots were reserved above and the child is BIGINT
+            // by the registered return type.
+            let slice = unsafe { child.as_mut_slice_with_len::<i64>(rows) };
+            for slot in slice.iter_mut() {
+                *slot = value;
+            }
+        }
+        Ok(())
+    }
+
+    fn signatures() -> Vec<ScalarFunctionSignature> {
+        let fields: Vec<(&str, LogicalTypeHandle)> = MODEL_FIELDS
+            .iter()
+            .map(|(name, kind)| (*name, LogicalTypeHandle::from(*kind)))
+            .collect();
+        vec![ScalarFunctionSignature::exact(
+            vec![],
+            LogicalTypeHandle::struct_type(&fields),
+        )]
+    }
+}
+
 /// `subtoken_cache_stats() → STRUCT(hits, misses, encoded, uncached, entries, capacity)`
 ///
 /// `encoded` is the number of times the encoder has actually run since the last
@@ -363,6 +500,8 @@ pub unsafe fn extension_entrypoint(con: duckdb::Connection) -> Result<(), Box<dy
     con.register_scalar_function::<Embed>("subtoken_embed")?;
     con.register_scalar_function::<IsTruncated>("subtoken_is_truncated")?;
     con.register_scalar_function::<Version>("subtoken_version")?;
+    con.register_scalar_function::<ModelId>("subtoken_model_id")?;
+    con.register_scalar_function::<Models>("subtoken_models")?;
     con.register_scalar_function::<CacheStats>("subtoken_cache_stats")?;
     con.register_scalar_function::<CacheClear>("subtoken_cache_clear")?;
     Ok(())
