@@ -1074,11 +1074,11 @@ MUTATIONS: list[Mutation] = [
         kind="sql",
     ),
     # A neutral name on purpose. It used to register `embed_nearest_neighbour`,
-    # which trips the similarity guard as well as the count — and since that
-    # guard now runs FIRST in test/sql/05, a payload matching it would prove
-    # only that the guard fires and say nothing about the count or the name
-    # list. `a_similarity_function_is_registered` below is the one that drives
-    # the guard.
+    # which trips test/sql/05's similarity guard as well as its count — so a
+    # kill proved that SOMETHING in that file noticed and not which assertion
+    # did. `subtoken_eighth` is invisible to the guard, so only the count and
+    # the name list can see it; `a_similarity_function_is_registered` below
+    # drives the guard, and neither mutation can stand in for the other.
     Mutation(
         name="an_eighth_function_is_registered",
         file=GLUE,
@@ -1087,9 +1087,11 @@ MUTATIONS: list[Mutation] = [
         expect_red="05_the_registered_surface",
         kind="sql",
     ),
-    # AC4's demonstration, and the reason the guard was moved above the count:
-    # with the count first this mutation reddened on "the extension registers
-    # seven functions" and the guard was never evaluated.
+    # The similarity guard, driven on its own. Measured: with this mutation
+    # applied, test/sql/05 reports BOTH "no similarity or nearest-neighbour
+    # function is registered" and "the extension registers seven functions" —
+    # the CLI runs the file in batch and does not stop at the first raised
+    # statement, so the guard is evaluated whatever precedes it.
     Mutation(
         name="a_similarity_function_is_registered",
         file=GLUE,

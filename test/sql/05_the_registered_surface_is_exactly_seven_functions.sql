@@ -11,6 +11,14 @@ CREATE TABLE registered AS
     WHERE function_name NOT IN (SELECT function_name FROM subtoken_baseline_functions)
       AND function_name <> 'must';
 
+SELECT must('the extension registers seven functions',
+    (SELECT count(*) FROM registered) = 7);
+
+SELECT must('and they are exactly the documented seven',
+    (SELECT list_sort(list(function_name)) FROM registered)
+    = ['subtoken_cache_clear', 'subtoken_cache_stats', 'subtoken_embed', 'subtoken_is_truncated',
+       'subtoken_model_id', 'subtoken_models', 'subtoken_version']);
+
 -- No nearest-neighbour lookup, deliberately. The measured position of this
 -- model is that a map built from its vectors keeps the cluster structure and
 -- loses the neighbourhoods, which README's "What it is good at, and what it is
@@ -19,24 +27,19 @@ CREATE TABLE registered AS
 -- what the model does not deliver, so the absence is asserted here rather than
 -- left to whoever adds the next function to remember.
 --
--- It runs BEFORE the count and the name list, and that ordering is the
--- assertion rather than a tidiness: `must` raises, which ends the file, so
--- whichever assertion comes first is the only one a break is ever shown to.
--- With the count first, registering `subtoken_similar` reddened this file on
--- "the extension registers seven functions" and the guard below was never
--- evaluated — a guard that has never been seen to fire reads exactly like
--- one that cannot.
+-- This guard stands on its own, and that was checked rather than assumed: with
+-- `subtoken_similar` registered, the run reports BOTH "no similarity or
+-- nearest-neighbour function is registered" and "the extension registers seven
+-- functions". `must` raises, but the CLI runs the file in batch and does not
+-- stop at the first raised statement, so every assertion below is evaluated
+-- whatever order they are in and a guard cannot be masked by the count above
+-- it. `scripts/mutation_check.py` keeps the two apart anyway:
+-- `a_similarity_function_is_registered` drives this line and
+-- `an_eighth_function_is_registered` registers a neutral name that only the
+-- count and the name list can see.
 SELECT must('no similarity or nearest-neighbour function is registered',
     (SELECT count(*) FROM registered
      WHERE regexp_matches(function_name, '(?i)similar|neighbou?r|nearest|knn|distance|match|rank')) = 0);
-
-SELECT must('the extension registers seven functions',
-    (SELECT count(*) FROM registered) = 7);
-
-SELECT must('and they are exactly the documented seven',
-    (SELECT list_sort(list(function_name)) FROM registered)
-    = ['subtoken_cache_clear', 'subtoken_cache_stats', 'subtoken_embed', 'subtoken_is_truncated',
-       'subtoken_model_id', 'subtoken_models', 'subtoken_version']);
 
 SELECT must('nothing here takes the ft_ prefix that belongs to another extension',
     (SELECT count(*) FROM registered WHERE starts_with(function_name, 'ft_')) = 0);
