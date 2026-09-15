@@ -8,7 +8,7 @@
 //! | `subtoken_is_truncated(text VARCHAR)` | `BOOLEAN` | whether `subtoken_embed(text)` had to drop content to fit |
 //! | `subtoken_version()` | `VARCHAR` | which build, which model, which width |
 //! | `subtoken_model_id()` | `VARCHAR` | the model key, joinable: store it beside a vector column |
-//! | `subtoken_models()` | `STRUCT(model, backend, revision, width, input_limit, licence, tier, key)` | the catalogue row for the model this build serves |
+//! | `subtoken_models()` | `STRUCT(model, backend, revision, width, input_limit, licence, tier, "key")` | the catalogue row for the model this build serves |
 //! | `subtoken_cache_stats()` | `STRUCT(hits, misses, encoded, uncached, entries, capacity)` | makes "did it re-embed?" answerable in SQL |
 //! | `subtoken_cache_clear()` | `BIGINT` | vectors dropped; lets a session start from a known state |
 //!
@@ -305,7 +305,7 @@ impl VScalar for ModelId {
     }
 }
 
-/// `subtoken_models() → STRUCT(model, backend, revision, width, input_limit, licence, tier, key)`
+/// `subtoken_models() → STRUCT(model, backend, revision, width, input_limit, licence, tier, "key")`
 ///
 /// The catalogue row for the model this build serves: what wrote a vector, at
 /// what revision, how wide, how much text it reads, under what licence, at what

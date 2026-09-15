@@ -468,6 +468,58 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_model_id_is_the_whole_key_the_version_sentence_abbreviates() {
+        let id = model_id().expect("model_id");
+        assert_eq!(id.len(), 64, "{id}");
+        assert!(
+            id.chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+            "not lowercase hex: {id}"
+        );
+        // The sentence carries the first twelve characters and nothing longer,
+        // which is the whole reason this function exists.
+        assert!(describe().contains(&id[..12]), "{}", describe());
+        assert!(!describe().contains(&id[..13]), "{}", describe());
+    }
+
+    /// The catalogue's `width` and `input_limit` are asserted against what the
+    /// model *does*, not against the constants they are read from. A row that
+    /// restated `dim()` would pass a test that also restated it; this one
+    /// embeds a string and counts the floats, and finds the truncation boundary
+    /// by asking `is_truncated` either side of it.
+    #[test]
+    fn the_catalogue_row_describes_the_model_that_is_loaded() {
+        let row = catalogue().expect("catalogue");
+
+        assert_eq!(row.model, model::MODEL_ID);
+        assert_eq!(row.backend, "model2vec");
+        assert_eq!(row.revision.len(), 40, "the revision is the full SHA-1");
+        assert_eq!(row.revision, model::MODEL_REVISION);
+        assert_eq!(row.licence, "MIT");
+        assert_eq!(row.tier, "supported");
+
+        assert_eq!(row.key, model_id().expect("model_id"));
+
+        let vector = embed("a manufacturer of industrial fasteners").expect("embed");
+        assert_eq!(row.width as usize, vector.len());
+
+        // `ok ` is one token in this vocabulary and three characters, so a
+        // probe built from it stays far under the character cut and pins the
+        // token cut alone — the same reason test/sql/10 uses it.
+        let limit = row.input_limit as usize;
+        let at_limit = format!("{}marker", "ok ".repeat(limit - 1));
+        let past_limit = format!("{}marker", "ok ".repeat(limit));
+        assert!(
+            !is_truncated(&at_limit).expect("is_truncated"),
+            "input_limit {limit} claims more room than the model gives"
+        );
+        assert!(
+            is_truncated(&past_limit).expect("is_truncated"),
+            "input_limit {limit} claims less room than the model gives"
+        );
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // At the scale the product is sold at, rather than at the scale that is
     // convenient to write.
