@@ -220,3 +220,7 @@ That file also records why this model and not a larger one from the same family.
 This repository is MIT; the `LICENSE` file at its root is that licence and covers the code here.
 
 The bundled embedding model is a third-party Model2Vec release. Its publisher **declares** it MIT, in the model card at [`models/potion-base-8M/MODEL_CARD.md`](models/potion-base-8M/MODEL_CARD.md) — the frontmatter and the citation both say so. The upstream repository carries no `LICENSE` file at the pinned revision, so **no MIT text or copyright line for the model is reproduced here**, because there is none to copy. If you need the licence in hand rather than declared, take it up with the publisher before redistributing the weights.
+
+## Credits
+
+Part of the [Meridian](https://meridian.online) project.
