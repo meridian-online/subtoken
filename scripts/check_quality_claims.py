@@ -1651,8 +1651,8 @@ def self_test() -> int:  # noqa: C901
 
     # The word-order ban, on the sentence a page once carried. It is in the list
     # both pages are read against, and it is reported by its own phrase. The
-    # sentence that says the opposite has to pass: a ban on a bare `word order`
-    # would report the truthful sentence the registry entry carries now.
+    # sentence that says the opposite has to pass, and it spells `word order`
+    # too: a ban on those two words alone would report the quality section.
     the_old_sentence = "Word order still matters, and different words still give different vectors."
     found = page_problems("a_file", the_old_sentence)
     if not any("contains 'word order still matters'" in problem for problem in found):
@@ -1663,8 +1663,7 @@ def self_test() -> int:  # noqa: C901
         )
         return 1
     the_true_sentence = (
-        "The same words in another order give the same vector, and different words still "
-        "give different vectors."
+        "It also does not read word order. A Model2Vec vector is the mean of its token vectors."
     )
     if page_problems("a_file", the_true_sentence) != []:
         print(

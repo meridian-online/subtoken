@@ -860,14 +860,23 @@ MUTATIONS: list[Mutation] = [
     # expression or an entry inside a line the mutations above replace whole, so
     # a mutation that drops only that is what says the self-test holds each of
     # them. The first empties the ban of the phrase on both pages; the second
-    # leaves it in the list and takes it out of what the descriptor's check
-    # sees; the third reads the descriptor file as raw text, so a comment the
+    # widens it to two words the quality section spells; the third leaves the
+    # phrase in the list and takes it out of what the descriptor's check sees;
+    # the fourth reads the descriptor file as raw text, so a comment the
     # registry does not render is on the page.
     Mutation(
         name="the_word_order_phrase_is_missing_from_the_ban",
         file="scripts/check_quality_claims.py",
         old='    ("word order still matters", WORD_ORDER_READ),\n',
         new="",
+        kind="script",
+        command=QUALITY_CLAIMS_SELF_TEST,
+    ),
+    Mutation(
+        name="the_word_order_ban_is_widened_to_the_quality_sections_own_sentence",
+        file="scripts/check_quality_claims.py",
+        old='    ("word order still matters", WORD_ORDER_READ),\n',
+        new='    ("word order still matters", WORD_ORDER_READ),\n    ("word order", WORD_ORDER_READ),\n',
         kind="script",
         command=QUALITY_CLAIMS_SELF_TEST,
     ),
