@@ -60,7 +60,11 @@ WHAT IS ASSERTED
        community registry` and `nothing is published to the community
        registry`: the extension is in the registry, and a page that denies it
        is wrong about the line a stranger runs first, which the README said in
-       a SQL comment as well as in prose.
+       a SQL comment as well as in prose. A phrase wrapped across two SQL
+       comment lines is read as one, the `--` opening each line taken out
+       first. `README.md` alone is also held to `BANNED_ON_README`: `word order
+       still matters`, which the quality section contradicts and which
+       `description.yml` still carries, so the descriptor is not held to it.
     9. The bundled model has not moved off `MEASURED_ON_REVISION`.
    10. Every entry in `FIGURES` and every entry in `ALLOWED_UNIVERSALS` is
        written on at least one of the two pages. A permitted value or a
@@ -418,7 +422,7 @@ BANNED_IN_SECTION: list[tuple[str, str]] = [
     ("on the evidence we have", "a hedge standing where the corpus and the sample size belong"),
 ]
 
-#: Why the two registry-status phrases in `BANNED_ON_PAGE` are banned: the
+#: Why the registry-status phrases in `BANNED_ON_PAGE` are banned: the
 #: extension is in the DuckDB community registry and
 #: `INSTALL subtoken FROM community` works, so a page that says otherwise is
 #: wrong on the first line a stranger reads and sends them to build from source.
@@ -442,6 +446,29 @@ BANNED_ON_PAGE: list[tuple[str, str]] = [
     ("not published to the community registry", REGISTRY_DENIAL),
     ("nothing is published to the community registry", REGISTRY_DENIAL),
 ]
+
+#: Why the phrase in `BANNED_ON_README` is banned: a Model2Vec vector is the mean
+#: of its token vectors, so the embedder does not read word order, and a page
+#: that says it does contradicts the README's own quality section.
+WORD_ORDER_READ = "the embedder does not read word order, and the quality section says so"
+
+#: Assertion 8, over `README.md` alone. It is not in `BANNED_ON_PAGE` because
+#: that list is read over `description.yml` as well, and the descriptor still
+#: carries this sentence in the text the registry renders: its copy changes by
+#: a pull request to the DuckDB community-extensions repository, not by an edit
+#: here, so a ban that read it would fail on the tree as it stands. The phrase is
+#: the sentence the README once said, lower-cased, because `page_problems`
+#: reads over case-folded text.
+BANNED_ON_README: list[tuple[str, str]] = [
+    ("word order still matters", WORD_ORDER_READ),
+]
+
+#: The `--` that opens a SQL comment line, with the indentation before it. Taken
+#: out of a page before assertion 8 reads it, because a phrase wrapped across two
+#: comment lines has the second line's `--` in the middle of it: `-- not
+#: published to the` and `-- community registry` collapse to `not published to
+#: the -- community registry`, which contains none of the phrases banned above.
+SQL_COMMENT_LEADER = re.compile(r"(?m)^[ \t]*--+")
 
 #: Assertion 7. Words that assert a property over a whole set. Matched whole, so
 #: `all-MiniLM-L6-v2` and `overall` are not hits — though both are usually
@@ -825,22 +852,29 @@ def region_problems(name: str, section_text: str | None) -> list[str]:
     return problems
 
 
-def page_problems(name: str, page_text: str) -> list[str]:
-    """Assertion 8, over one whole page: speed vocabulary anywhere in `page_text`.
+def page_problems(
+    name: str, page_text: str, banned: list[tuple[str, str]] = BANNED_ON_PAGE
+) -> list[str]:
+    """Assertion 8, over one whole page: the phrases in `banned` anywhere in `page_text`.
 
     Read over `strip_addresses` and not `strip_noise`, so fenced blocks and
     inline code spans are scanned as well as prose. The SQL examples are the
     surface this ban was widened to cover — a speed figure in a comment inside
     one reaches the same reader as a speed figure in a sentence — and they are
-    not all fenced: `docs.hello_world` is published raw.
+    not all fenced: `docs.hello_world` is published raw. The `--` opening each
+    comment line is taken out first, so a phrase wrapped across two comment
+    lines reads as it does to a person.
+
+    `banned` is `BANNED_ON_PAGE` for both pages. `run` widens it for `README.md`
+    with `BANNED_ON_README`, which the descriptor is not held to.
 
     What `page_text` is for the registry entry is `PAGE_FIELDS` joined, which is
     `descriptor_page`'s business and not this function's. Passing it one field
     is how this scan came to assert a reach it did not have.
     """
-    collapsed = collapse(strip_addresses(page_text))
+    collapsed = collapse(SQL_COMMENT_LEADER.sub(" ", strip_addresses(page_text)))
     problems = []
-    for phrase, reason in BANNED_ON_PAGE:
+    for phrase, reason in banned:
         if collapse(phrase) in collapsed:
             position = collapsed.find(collapse(phrase))
             context = collapsed[max(0, position - 70) : position + 70]
@@ -981,7 +1015,7 @@ def run(root: pathlib.Path) -> int:
     problems += disagreements(readme_section, descriptor_section)
     problems += unused_figures(readme_section, descriptor_section)
     problems += unused_allowances(readme_section, descriptor_section)
-    problems += page_problems(README, readme_text)
+    problems += page_problems(README, readme_text, BANNED_ON_PAGE + BANNED_ON_README)
     problems += page_problems(f"{DESCRIPTOR} (the rendered page)", descriptor_page(descriptor))
     problems += revision_problems(source_path.read_text())
 
@@ -1001,7 +1035,8 @@ def run(root: pathlib.Path) -> int:
         f"ALLOWED_UNIVERSALS; no banned hedge in either section; no speed vocabulary and no "
         f"denial that the extension is in the registry in "
         f"{README} or in the {len(PAGE_FIELDS)} {DESCRIPTOR} fields the registry renders, their "
-        f"SQL examples included; every one of the {len(FIGURES)} registered figures written on "
+        f"SQL examples included, and none of the {len(BANNED_ON_README)} phrase(s) banned in "
+        f"{README} alone; every one of the {len(FIGURES)} registered figures written on "
         f"at least one page; and the bundled model still at the revision they were published "
         f"against"
     )
@@ -1577,6 +1612,14 @@ def self_test() -> int:  # noqa: C901
             "The extension is not published to the\ncommunity registry yet.",
             "not published to the community registry",
         ),
+        # A SQL comment wrapped the way the prose one above is: the second
+        # line's `--` sits between the halves of the phrase until it is taken out.
+        (
+            "the denial wrapped across two SQL comment lines",
+            "```sql\n-- not published to the\n-- community registry\n"
+            "INSTALL subtoken FROM community;\n```",
+            "not published to the community registry",
+        ),
         (
             "the Status form of the denial, capitalised",
             "Nothing is published to the community registry yet, so the line above fails.",
@@ -1600,6 +1643,10 @@ def self_test() -> int:  # noqa: C901
     for label, text in (
         ("the extension said to be in the registry", "It is published to the community registry."),
         ("the install line in a fenced example", "```sql\nINSTALL subtoken FROM community;\n```"),
+        (
+            "the true statement wrapped across two SQL comment lines",
+            "```sql\n-- published to the\n-- community registry\n```",
+        ),
     ):
         if page_problems("a_file", text) != []:
             print(
@@ -1607,6 +1654,27 @@ def self_test() -> int:  # noqa: C901
                 file=sys.stderr,
             )
             return 1
+
+    # The README-only ban, on the sentence the README used to carry. It is read
+    # through `BANNED_ON_README` and reported by its own phrase, and the same
+    # sentence through the page-wide list alone is clean: that list is what
+    # `description.yml` is held to, and the descriptor still says this.
+    the_old_sentence = "Word order still matters, and different words still give different vectors."
+    found = page_problems("a_file", the_old_sentence, BANNED_ON_README)
+    if not any("contains 'word order still matters'" in problem for problem in found):
+        print(
+            f"self-test FAILED: the README's old word-order sentence was not reported by "
+            f"'word order still matters': {found}",
+            file=sys.stderr,
+        )
+        return 1
+    if page_problems("a_file", the_old_sentence) != []:
+        print(
+            "self-test FAILED: the page-wide list reported the word-order sentence, and the "
+            f"descriptor is held to that list: {page_problems('a_file', the_old_sentence)}",
+            file=sys.stderr,
+        )
+        return 1
 
     # Reading code is not reading addresses. A URL that spells a banned word is
     # an address, and `strip_addresses` is the only thing keeping it out now
@@ -1877,12 +1945,36 @@ def self_test() -> int:  # noqa: C901
             f"{README} contains 'not published to the community registry'",
         ),
         (
+            "the registry denial wrapped across two SQL comment lines in the README",
+            {
+                "readme": readme_page.replace(
+                    "# subtoken\n\n",
+                    "# subtoken\n\n```sql\n-- not published to the\n-- community registry\n"
+                    "INSTALL subtoken FROM community;\n```\n\n",
+                )
+            },
+            f"{README} contains 'not published to the community registry'",
+        ),
+        (
             "the registry denial in the registry entry's published SQL example",
             {
                 "hello_world": "-- Not published to the community registry yet.\n"
                 "SELECT subtoken_embed(name) FROM t;\n"
             },
             f"{DESCRIPTOR} (the rendered page) contains 'not published to the community registry'",
+        ),
+        # The README-only ban through `run`. The README's own sentence used to be
+        # the opposite of its quality section.
+        (
+            "the README saying word order still matters",
+            {
+                "readme": readme_page.replace(
+                    "`subtoken_embed()` is a scalar function.",
+                    "`subtoken_embed()` is a scalar function. Word order still matters, and "
+                    "different words still give different vectors.",
+                )
+            },
+            f"{README} contains 'word order still matters'",
         ),
         (
             "the bundled model moved off the revision the figures were published against",
@@ -1907,6 +1999,20 @@ def self_test() -> int:  # noqa: C901
             )
             return 1
 
+    # The README-only ban stops at the README. `description.yml` carries the same
+    # sentence in the text the registry renders, so the same words on the
+    # descriptor's page leave `run` at exit 0 until that copy is corrected.
+    code, report = staged_run(
+        {**clean_tree, "blurb": "Word order still matters, and different words still differ."}
+    )
+    if code != 0:
+        print(
+            f"self-test FAILED: the word-order sentence on the registry entry's page exited "
+            f"{code}, and the ban on it is scoped to {README}. What it printed: {report}",
+            file=sys.stderr,
+        )
+        return 1
+
     # And the same check the way CI reaches it: as a process, through `main`,
     # with no arguments. Everything above calls `run` directly, so `main`'s
     # dispatch to it is the last wiring here with no case behind it.
@@ -1929,13 +2035,15 @@ def self_test() -> int:  # noqa: C901
         )
         return 1
 
+    registry_denials = sum(1 for _, reason in BANNED_ON_PAGE if reason == REGISTRY_DENIAL)
     print(
         f"self-test ok: {len(FIGURES)} measured figures, {len(CLAIMS)} pinned claims, "
         f"{len(TABLE_ROWS)} summary-table rows read cell by cell, {len(DIRECTIONAL_SERIES)} "
         f"series that must be quoted whole, {len(UNIVERSAL_WORDS)} scanned quantifiers with "
         f"{len(ALLOWED_UNIVERSALS)} recorded exception(s), {len(BANNED_IN_SECTION)} banned "
         f"hedges and {len(BANNED_ON_PAGE)} page-wide banned phrases, the speed vocabulary and the "
-        f"two that deny the registry; 13% rounds onto 0.13185 and "
+        f"{registry_denials} that deny the registry, and {len(BANNED_ON_README)} phrase(s) "
+        f"banned in {README} alone; 13% rounds onto 0.13185 and "
         f"14% and 45% do not; a renamed heading, an empty section reported as empty rather "
         f"than as its missing claims, an unmeasured quantity, a dropped claim, two figures "
         f"swapped between corpora in prose and in the table, the region sentence's two corpora "
@@ -1943,7 +2051,9 @@ def self_test() -> int:  # noqa: C901
         f"quoted at its endpoints only, an unpermitted universal, a permitted universal whose "
         f"wording moved, an exception no page writes, a hedge reinstated in a sentence with "
         f"nothing else wrong with it, a speed figure outside the quality section and a speed "
-        f"figure inside a fenced example, a one-sided figure in either direction, the same "
+        f"figure inside a fenced example, a registry denial wrapped across two SQL comment "
+        f"lines, the README saying word order still matters, a one-sided figure in either "
+        f"direction, the same "
         f"figures in a different order, a figure written a different number of times, a "
         f"registered figure no page writes and a bumped model revision are each reported; "
         f"`in each case` and `bar none` are seen through the whole words `each` and `none` "
