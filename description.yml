@@ -1,9 +1,9 @@
 ## The DuckDB community-extensions registry entry for subtoken.
 ##
 ## This file is the submission: it is copied to `extensions/subtoken/description.yml`
-## in duckdb/community-extensions. Merging it there makes DuckDB's CI build this
-## repository at `repo.ref` for every platform in the matrix and publish the
-## binaries, after which `INSTALL subtoken FROM community` works for anyone.
+## in duckdb/community-extensions. The extension is in that registry: DuckDB's CI
+## builds this repository at `repo.ref` for every platform in the matrix and
+## publishes the binaries, so `INSTALL subtoken FROM community` works for anyone.
 ##
 ## The `repo.ref` below names a commit that carries the build contract in
 ## `Makefile` and the `extension-ci-tools` submodule. `scripts/check_description_examples.py`
@@ -313,8 +313,9 @@ docs:
     ### What counts as the same string
 
     The bundled tokenizer lowercases, strips accents and ignores surrounding
-    whitespace, so you do not have to normalise a column before embedding it. Word
-    order still matters, and different words still give different vectors.
+    whitespace, so you do not have to normalise a column before embedding it. The
+    same words in another order give the same vector, and different words still
+    give different vectors.
 
     ```sql
     SELECT subtoken_embed('Steel') = subtoken_embed('  steel  ')          AS case_and_space_fold,
