@@ -760,7 +760,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_quality_check_stops_banning_speed_outside_the_section",
         file="scripts/check_quality_claims.py",
-        old="    for phrase, reason in BANNED_ON_PAGE:",
+        old="    for phrase, reason in banned:",
         new="    for phrase, reason in []:",
         kind="script",
         command=QUALITY_CLAIMS_SELF_TEST,
@@ -772,8 +772,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_speed_ban_stops_looking_inside_the_sql_examples",
         file="scripts/check_quality_claims.py",
-        old="    collapsed = collapse(strip_addresses(page_text))",
-        new="    collapsed = collapse(strip_noise(page_text))",
+        old='    collapsed = collapse(SQL_COMMENT_LEADER.sub(" ", strip_addresses(page_text)))',
+        new='    collapsed = collapse(SQL_COMMENT_LEADER.sub(" ", strip_noise(page_text)))',
         kind="script",
         command=QUALITY_CLAIMS_SELF_TEST,
     ),
@@ -851,8 +851,27 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_speed_ban_never_reaches_the_readme",
         file="scripts/check_quality_claims.py",
-        old="    problems += page_problems(README, readme_text)",
+        old="    problems += page_problems(README, readme_text, BANNED_ON_PAGE + BANNED_ON_README)",
         new="    pass",
+        kind="script",
+        command=QUALITY_CLAIMS_SELF_TEST,
+    ),
+    # The README-only list and the comment-leader strip are each an expression
+    # inside a line the mutations above replace whole, so a mutation that only
+    # drops the expression is what says the self-test holds each of them.
+    Mutation(
+        name="the_readme_is_not_held_to_the_readme_only_ban",
+        file="scripts/check_quality_claims.py",
+        old="page_problems(README, readme_text, BANNED_ON_PAGE + BANNED_ON_README)",
+        new="page_problems(README, readme_text, BANNED_ON_PAGE)",
+        kind="script",
+        command=QUALITY_CLAIMS_SELF_TEST,
+    ),
+    Mutation(
+        name="a_denial_wrapped_across_sql_comment_lines_is_read_with_the_dashes_in_it",
+        file="scripts/check_quality_claims.py",
+        old='collapse(SQL_COMMENT_LEADER.sub(" ", strip_addresses(page_text)))',
+        new="collapse(strip_addresses(page_text))",
         kind="script",
         command=QUALITY_CLAIMS_SELF_TEST,
     ),
