@@ -760,7 +760,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_quality_check_stops_banning_speed_outside_the_section",
         file="scripts/check_quality_claims.py",
-        old="    for phrase, reason in banned:",
+        old="    for phrase, reason in BANNED_ON_PAGE:",
         new="    for phrase, reason in []:",
         kind="script",
         command=QUALITY_CLAIMS_SELF_TEST,
@@ -851,19 +851,39 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_speed_ban_never_reaches_the_readme",
         file="scripts/check_quality_claims.py",
-        old="    problems += page_problems(README, readme_text, BANNED_ON_PAGE + BANNED_ON_README)",
+        old="    problems += page_problems(README, readme_text)",
         new="    pass",
         kind="script",
         command=QUALITY_CLAIMS_SELF_TEST,
     ),
-    # The README-only list and the comment-leader strip are each an expression
-    # inside a line the mutations above replace whole, so a mutation that only
-    # drops the expression is what says the self-test holds each of them.
+    # The word-order phrase, and what the registry page is read as, are each an
+    # expression or an entry inside a line the mutations above replace whole, so
+    # a mutation that drops only that is what says the self-test holds each of
+    # them. The first empties the ban of the phrase on both pages; the second
+    # leaves it in the list and takes it out of what the descriptor's check
+    # sees; the third reads the descriptor file as raw text, so a comment the
+    # registry does not render is on the page.
     Mutation(
-        name="the_readme_is_not_held_to_the_readme_only_ban",
+        name="the_word_order_phrase_is_missing_from_the_ban",
         file="scripts/check_quality_claims.py",
-        old="page_problems(README, readme_text, BANNED_ON_PAGE + BANNED_ON_README)",
-        new="page_problems(README, readme_text, BANNED_ON_PAGE)",
+        old='    ("word order still matters", WORD_ORDER_READ),\n',
+        new="",
+        kind="script",
+        command=QUALITY_CLAIMS_SELF_TEST,
+    ),
+    Mutation(
+        name="the_registry_page_is_not_held_to_the_word_order_ban",
+        file="scripts/check_quality_claims.py",
+        old="descriptor_page(descriptor))",
+        new='descriptor_page(descriptor).replace("Word order still matters", ""))',
+        kind="script",
+        command=QUALITY_CLAIMS_SELF_TEST,
+    ),
+    Mutation(
+        name="the_registry_page_is_read_as_the_raw_file_with_its_comments",
+        file="scripts/check_quality_claims.py",
+        old="descriptor_page(descriptor))",
+        new="descriptor_path.read_text())",
         kind="script",
         command=QUALITY_CLAIMS_SELF_TEST,
     ),
