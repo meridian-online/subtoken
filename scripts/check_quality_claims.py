@@ -56,7 +56,11 @@ WHAT IS ASSERTED
        so it sees code as well as prose. It has to: `docs.hello_world` is a
        published SQL example that is not fenced, `description.yml` fences the
        rest and `README.md` fences its own, and a ban that ran after code was
-       stripped read none of them.
+       stripped read none of them. The same list carries `not published to the
+       community registry` and `nothing is published to the community
+       registry`: the extension is in the registry, and a page that denies it
+       is wrong about the line a stranger runs first, which the README said in
+       a SQL comment as well as in prose.
     9. The bundled model has not moved off `MEASURED_ON_REVISION`.
    10. Every entry in `FIGURES` and every entry in `ALLOWED_UNIVERSALS` is
        written on at least one of the two pages. A permitted value or a
@@ -414,9 +418,19 @@ BANNED_IN_SECTION: list[tuple[str, str]] = [
     ("on the evidence we have", "a hedge standing where the corpus and the sample size belong"),
 ]
 
+#: Why the two registry-status phrases in `BANNED_ON_PAGE` are banned: the
+#: extension is in the DuckDB community registry and
+#: `INSTALL subtoken FROM community` works, so a page that says otherwise is
+#: wrong on the first line a stranger reads and sends them to build from source.
+REGISTRY_DENIAL = "the extension is in the community registry and the INSTALL line works"
+
 #: Assertion 8, over `README.md` and the `PAGE_FIELDS` of `description.yml`.
 #: Speed is ruled out of the product claim, and a speed figure three sections
 #: down — or in the worked example above the prose — reaches the same reader.
+#: The two registry phrases are here for the same reach: the first is where the
+#: README used to say it in a SQL comment, and the second is how its Status
+#: paragraph put it. Each is a whole phrase because a bare `registry` is
+#: written truthfully in several places.
 BANNED_ON_PAGE: list[tuple[str, str]] = [
     ("faster", "speed is not part of the published claim, deliberately"),
     ("speedup", "speed is not part of the published claim, deliberately"),
@@ -425,6 +439,8 @@ BANNED_ON_PAGE: list[tuple[str, str]] = [
     ("per second", "speed is not part of the published claim, deliberately"),
     ("rows/s", "speed is not part of the published claim, deliberately"),
     ("×", "a multiplier is how a speed figure arrives; speed is ruled out here"),
+    ("not published to the community registry", REGISTRY_DENIAL),
+    ("nothing is published to the community registry", REGISTRY_DENIAL),
 ]
 
 #: Assertion 7. Words that assert a property over a whole set. Matched whole, so
@@ -830,7 +846,7 @@ def page_problems(name: str, page_text: str) -> list[str]:
             context = collapsed[max(0, position - 70) : position + 70]
             problems.append(
                 f"{name} contains {phrase!r} — {reason}. Found in: …{context}…  This ban is "
-                f"page-wide rather than section-wide: a speed figure under another heading "
+                f"page-wide rather than section-wide: what it bans under another heading "
                 f"reaches the same reader"
             )
     return problems
@@ -982,7 +998,8 @@ def run(root: pathlib.Path) -> int:
         f"with its source; all {len(CLAIMS)} pinned claims present in both; every summary-table "
         f"cell the figure FIGURES registers for its row and column; no partial series in any "
         f"sentence; no universal quantifier outside the {len(ALLOWED_UNIVERSALS)} recorded in "
-        f"ALLOWED_UNIVERSALS; no banned hedge in either section; no speed vocabulary in "
+        f"ALLOWED_UNIVERSALS; no banned hedge in either section; no speed vocabulary and no "
+        f"denial that the extension is in the registry in "
         f"{README} or in the {len(PAGE_FIELDS)} {DESCRIPTOR} fields the registry renders, their "
         f"SQL examples included; every one of the {len(FIGURES)} registered figures written on "
         f"at least one page; and the bundled model still at the revision they were published "
@@ -1535,6 +1552,62 @@ def self_test() -> int:  # noqa: C901
         if page_problems("a_file", text) == []:
             print(f"self-test FAILED: {label} outside the quality section reported clean", file=sys.stderr)
             return 1
+    # The registry-status phrases, one case per phrase and per case of the first
+    # letter, each required to be reported by its own phrase. `nothing is
+    # published to the community registry` does not contain `not published to
+    # the community registry`, so the two entries cannot cover for each other and
+    # a case that only asked for "some problem" would stay green with either one
+    # deleted. The first is planted where the README had it, in a SQL comment
+    # inside a fenced example; the wrapped case is how `description.yml` breaks a
+    # sentence across two lines.
+    for label, text, banned in (
+        (
+            "the denial in a SQL comment inside a fenced example, capitalised",
+            "```sql\n-- Not published to the community registry yet; see Status\n"
+            "INSTALL subtoken FROM community;\n```",
+            "not published to the community registry",
+        ),
+        (
+            "the denial in prose, lower case",
+            "The extension is not published to the community registry yet.",
+            "not published to the community registry",
+        ),
+        (
+            "the denial wrapped across two lines",
+            "The extension is not published to the\ncommunity registry yet.",
+            "not published to the community registry",
+        ),
+        (
+            "the Status form of the denial, capitalised",
+            "Nothing is published to the community registry yet, so the line above fails.",
+            "nothing is published to the community registry",
+        ),
+        (
+            "the Status form of the denial, lower case",
+            "For now nothing is published to the community registry yet.",
+            "nothing is published to the community registry",
+        ),
+    ):
+        found = page_problems("a_file", text)
+        if not any(f"contains {banned!r}" in problem for problem in found):
+            print(
+                f"self-test FAILED: {label} was not reported by {banned!r}: {found}",
+                file=sys.stderr,
+            )
+            return 1
+    # The ban is on the denial and not on the registry: the sentences that say it
+    # is there have to pass.
+    for label, text in (
+        ("the extension said to be in the registry", "It is published to the community registry."),
+        ("the install line in a fenced example", "```sql\nINSTALL subtoken FROM community;\n```"),
+    ):
+        if page_problems("a_file", text) != []:
+            print(
+                f"self-test FAILED: {label} was read as a denial: {page_problems('a_file', text)}",
+                file=sys.stderr,
+            )
+            return 1
+
     # Reading code is not reading addresses. A URL that spells a banned word is
     # an address, and `strip_addresses` is the only thing keeping it out now
     # that this scan no longer runs after code has been removed.
@@ -1779,6 +1852,38 @@ def self_test() -> int:  # noqa: C901
             {"blurb": "Static text embeddings as a DuckDB scalar, at 397x lower latency"},
             f"{DESCRIPTOR} (the rendered page) contains 'latency'",
         ),
+        # The registry denial through `run`, on each page. The README's own copy
+        # was a SQL comment above the install line and a sentence under Status.
+        (
+            "the registry denial in the README's status paragraph",
+            {
+                "readme": readme_page.replace(
+                    "`subtoken_embed()` is a scalar function.",
+                    "`subtoken_embed()` is a scalar function. Nothing is published to the "
+                    "community registry yet.",
+                )
+            },
+            f"{README} contains 'nothing is published to the community registry'",
+        ),
+        (
+            "the registry denial in a SQL comment in the README's opening example",
+            {
+                "readme": readme_page.replace(
+                    "# subtoken\n\n",
+                    "# subtoken\n\n```sql\n-- Not published to the community registry yet\n"
+                    "INSTALL subtoken FROM community;\n```\n\n",
+                )
+            },
+            f"{README} contains 'not published to the community registry'",
+        ),
+        (
+            "the registry denial in the registry entry's published SQL example",
+            {
+                "hello_world": "-- Not published to the community registry yet.\n"
+                "SELECT subtoken_embed(name) FROM t;\n"
+            },
+            f"{DESCRIPTOR} (the rendered page) contains 'not published to the community registry'",
+        ),
         (
             "the bundled model moved off the revision the figures were published against",
             {"revision": "0" * 40},
@@ -1829,7 +1934,8 @@ def self_test() -> int:  # noqa: C901
         f"{len(TABLE_ROWS)} summary-table rows read cell by cell, {len(DIRECTIONAL_SERIES)} "
         f"series that must be quoted whole, {len(UNIVERSAL_WORDS)} scanned quantifiers with "
         f"{len(ALLOWED_UNIVERSALS)} recorded exception(s), {len(BANNED_IN_SECTION)} banned "
-        f"hedges and {len(BANNED_ON_PAGE)} page-wide speed phrases; 13% rounds onto 0.13185 and "
+        f"hedges and {len(BANNED_ON_PAGE)} page-wide banned phrases, the speed vocabulary and the "
+        f"two that deny the registry; 13% rounds onto 0.13185 and "
         f"14% and 45% do not; a renamed heading, an empty section reported as empty rather "
         f"than as its missing claims, an unmeasured quantity, a dropped claim, two figures "
         f"swapped between corpora in prose and in the table, the region sentence's two corpora "

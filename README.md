@@ -5,8 +5,6 @@ Text becomes tokens, tokens become vectors. Inside DuckDB, with no network, no k
 The model is a static embedding model compiled into the extension binary, so a query embeds a column with no stops along the way — nothing to configure, nothing to fetch, nothing to meter.
 
 ```sql
--- Not published to the community registry yet; *Status* below says what to run
--- in the meantime.
 INSTALL subtoken FROM community;
 LOAD subtoken;
 
@@ -152,7 +150,7 @@ What it reports is whether `subtoken_embed` pooled less of the text than the who
 
 ### What counts as the same string
 
-The bundled tokenizer lowercases, strips accents and ignores surrounding whitespace, so `subtoken_embed('Steel')`, `subtoken_embed('steel')` and `subtoken_embed('  steel  ')` are the same vector, and `subtoken_embed('café')` matches `subtoken_embed('cafe' || chr(769))`. You do not have to normalise a column before embedding it. Word order still matters, and different words still give different vectors.
+The bundled tokenizer lowercases, strips accents and ignores surrounding whitespace, so `subtoken_embed('Steel')`, `subtoken_embed('steel')` and `subtoken_embed('  steel  ')` are the same vector, and `subtoken_embed('café')` matches `subtoken_embed('cafe' || chr(769))`. You do not have to normalise a column before embedding it. Different words still give different vectors, and the same words in another order do not: the embedder does not read word order.
 
 The cache keys on the exact input bytes rather than on the tokenizer's folded form, so those variants do occupy separate cache entries. That is deliberate: reproducing a dependency's normalisation in the cache would mean a tokenizer bump quietly changing which inputs share an entry, and the failure would be a vector returned for text nobody embedded.
 
@@ -196,7 +194,7 @@ make mutation-check   # break the code on purpose and require the tests to notic
 
 `make community-check` is the local form of the registry's own build. It needs `git submodule update --init --recursive` for `extension-ci-tools`, and it creates `configure/`, which is gitignored. `configure/extension_version.txt` must never be tracked: the upstream recipe writes that file only when it is absent, so a tracked copy would never be refreshed and would stamp a stale version onto every published artifact.
 
-The model is compiled into the binary, so the artifact is large — most of it is weights. Loading it needs `duckdb -unsigned` until a signed build exists in the community registry:
+The model is compiled into the binary, so the artifact is large — most of it is weights. A build you make here is unsigned, so loading it needs `duckdb -unsigned`; the copy `INSTALL subtoken FROM community` fetches is the registry's signed build and needs no flag:
 
 ```sql
 LOAD 'build/subtoken.duckdb_extension';
@@ -205,9 +203,9 @@ LOAD 'build/subtoken.duckdb_extension';
 
 ## Status
 
-Early. The extension builds, loads and answers queries; nothing is published to the community registry yet, so the `INSTALL ... FROM community` line at the top of this page does not work today. Build it yourself with `make extension` in the meantime.
+Early. The extension builds, loads and answers queries, and it is in the DuckDB community registry: `INSTALL subtoken FROM community; LOAD subtoken;` works on a stock `duckdb` with no flag. Build it yourself with `make extension` to work on it or to try a change.
 
-`description.yml` at the root of this repository is the registry entry, ready to be copied to `extensions/subtoken/description.yml` in [duckdb/community-extensions](https://github.com/duckdb/community-extensions), and `.github/workflows/MainDistributionPipeline.yml` runs the same build that registry would run. Submitting it is a separate decision and has not been taken.
+`description.yml` at the root of this repository is the registry entry; the registry keeps its copy at `extensions/subtoken/description.yml` in [duckdb/community-extensions](https://github.com/duckdb/community-extensions), and `.github/workflows/MainDistributionPipeline.yml` runs the same build the registry runs.
 
 ## The model
 
