@@ -62,9 +62,11 @@ WHAT IS ASSERTED
        is wrong about the line a stranger runs first, which the README said in
        a SQL comment as well as in prose. A phrase wrapped across two SQL
        comment lines is read as one, the `--` opening each line taken out
-       first. `README.md` alone is also held to `BANNED_ON_README`: `word order
-       still matters`, which the quality section contradicts and which
-       `description.yml` still carries, so the descriptor is not held to it.
+       first. The list also carries `word order still matters`, which the
+       quality section contradicts: the bundled model averages its token
+       vectors, so it does not read word order. The descriptor is read as the
+       fields the registry renders, so the same sentence in a YAML comment
+       outside them is not on the page and is not reported.
     9. The bundled model has not moved off `MEASURED_ON_REVISION`.
    10. Every entry in `FIGURES` and every entry in `ALLOWED_UNIVERSALS` is
        written on at least one of the two pages. A permitted value or a
@@ -428,13 +430,20 @@ BANNED_IN_SECTION: list[tuple[str, str]] = [
 #: wrong on the first line a stranger reads and sends them to build from source.
 REGISTRY_DENIAL = "the extension is in the community registry and the INSTALL line works"
 
+#: Why the phrase in `BANNED_ON_PAGE` about word order is banned: a Model2Vec
+#: vector is the mean of its token vectors, so the embedder does not read word
+#: order, and a page that says it does contradicts the quality section.
+WORD_ORDER_READ = "the embedder does not read word order, and the quality section says so"
+
 #: Assertion 8, over `README.md` and the `PAGE_FIELDS` of `description.yml`.
 #: Speed is ruled out of the product claim, and a speed figure three sections
 #: down — or in the worked example above the prose — reaches the same reader.
 #: The two registry phrases are here for the same reach: the first is where the
 #: README used to say it in a SQL comment, and the second is how its Status
 #: paragraph put it. Each is a whole phrase because a bare `registry` is
-#: written truthfully in several places.
+#: written truthfully in several places. The word-order phrase is the sentence
+#: a page once said, lower-cased, because `page_problems` reads over
+#: case-folded text.
 BANNED_ON_PAGE: list[tuple[str, str]] = [
     ("faster", "speed is not part of the published claim, deliberately"),
     ("speedup", "speed is not part of the published claim, deliberately"),
@@ -445,21 +454,6 @@ BANNED_ON_PAGE: list[tuple[str, str]] = [
     ("×", "a multiplier is how a speed figure arrives; speed is ruled out here"),
     ("not published to the community registry", REGISTRY_DENIAL),
     ("nothing is published to the community registry", REGISTRY_DENIAL),
-]
-
-#: Why the phrase in `BANNED_ON_README` is banned: a Model2Vec vector is the mean
-#: of its token vectors, so the embedder does not read word order, and a page
-#: that says it does contradicts the README's own quality section.
-WORD_ORDER_READ = "the embedder does not read word order, and the quality section says so"
-
-#: Assertion 8, over `README.md` alone. It is not in `BANNED_ON_PAGE` because
-#: that list is read over `description.yml` as well, and the descriptor still
-#: carries this sentence in the text the registry renders: its copy changes by
-#: a pull request to the DuckDB community-extensions repository, not by an edit
-#: here, so a ban that read it would fail on the tree as it stands. The phrase is
-#: the sentence the README once said, lower-cased, because `page_problems`
-#: reads over case-folded text.
-BANNED_ON_README: list[tuple[str, str]] = [
     ("word order still matters", WORD_ORDER_READ),
 ]
 
@@ -852,10 +846,8 @@ def region_problems(name: str, section_text: str | None) -> list[str]:
     return problems
 
 
-def page_problems(
-    name: str, page_text: str, banned: list[tuple[str, str]] = BANNED_ON_PAGE
-) -> list[str]:
-    """Assertion 8, over one whole page: the phrases in `banned` anywhere in `page_text`.
+def page_problems(name: str, page_text: str) -> list[str]:
+    """Assertion 8, over one whole page: the phrases in `BANNED_ON_PAGE` anywhere in `page_text`.
 
     Read over `strip_addresses` and not `strip_noise`, so fenced blocks and
     inline code spans are scanned as well as prose. The SQL examples are the
@@ -865,8 +857,8 @@ def page_problems(
     comment line is taken out first, so a phrase wrapped across two comment
     lines reads as it does to a person.
 
-    `banned` is `BANNED_ON_PAGE` for both pages. `run` widens it for `README.md`
-    with `BANNED_ON_README`, which the descriptor is not held to.
+    Both pages are read against the same list: a phrase that is wrong on the
+    README is wrong on the registry entry, which a stranger reads first.
 
     What `page_text` is for the registry entry is `PAGE_FIELDS` joined, which is
     `descriptor_page`'s business and not this function's. Passing it one field
@@ -874,7 +866,7 @@ def page_problems(
     """
     collapsed = collapse(SQL_COMMENT_LEADER.sub(" ", strip_addresses(page_text)))
     problems = []
-    for phrase, reason in banned:
+    for phrase, reason in BANNED_ON_PAGE:
         if collapse(phrase) in collapsed:
             position = collapsed.find(collapse(phrase))
             context = collapsed[max(0, position - 70) : position + 70]
@@ -1015,7 +1007,7 @@ def run(root: pathlib.Path) -> int:
     problems += disagreements(readme_section, descriptor_section)
     problems += unused_figures(readme_section, descriptor_section)
     problems += unused_allowances(readme_section, descriptor_section)
-    problems += page_problems(README, readme_text, BANNED_ON_PAGE + BANNED_ON_README)
+    problems += page_problems(README, readme_text)
     problems += page_problems(f"{DESCRIPTOR} (the rendered page)", descriptor_page(descriptor))
     problems += revision_problems(source_path.read_text())
 
@@ -1032,13 +1024,12 @@ def run(root: pathlib.Path) -> int:
         f"with its source; all {len(CLAIMS)} pinned claims present in both; every summary-table "
         f"cell the figure FIGURES registers for its row and column; no partial series in any "
         f"sentence; no universal quantifier outside the {len(ALLOWED_UNIVERSALS)} recorded in "
-        f"ALLOWED_UNIVERSALS; no banned hedge in either section; no speed vocabulary and no "
-        f"denial that the extension is in the registry in "
-        f"{README} or in the {len(PAGE_FIELDS)} {DESCRIPTOR} fields the registry renders, their "
-        f"SQL examples included, and none of the {len(BANNED_ON_README)} phrase(s) banned in "
-        f"{README} alone; every one of the {len(FIGURES)} registered figures written on "
-        f"at least one page; and the bundled model still at the revision they were published "
-        f"against"
+        f"ALLOWED_UNIVERSALS; no banned hedge in either section; no speed vocabulary, no "
+        f"denial that the extension is in the registry and no claim that word order still "
+        f"matters in {README} or in the {len(PAGE_FIELDS)} {DESCRIPTOR} fields the registry "
+        f"renders, their SQL examples included; every one of the {len(FIGURES)} registered "
+        f"figures written on at least one page; and the bundled model still at the revision "
+        f"they were published against"
     )
     return 0
 
@@ -1049,7 +1040,9 @@ def stage_tree(root: pathlib.Path, tree: dict[str, str]) -> None:
     `run` reads a directory rather than a set of strings, so proving that it
     wires its assertions together at all needs a directory to plant a defect in.
     The descriptor is dumped and read back through PyYAML, so a case cannot pass
-    by writing YAML the real loader would read differently.
+    by writing YAML the real loader would read differently. `tree["header"]`, when
+    present, is written above the dump as YAML comment lines: a comment is not a
+    field, so the registry does not render it, and a dump alone cannot plant one.
     """
     import yaml
 
@@ -1059,7 +1052,8 @@ def stage_tree(root: pathlib.Path, tree: dict[str, str]) -> None:
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text(f"Revision: `{tree['revision']}`\n")
     (root / DESCRIPTOR).write_text(
-        yaml.safe_dump(
+        tree.get("header", "")
+        + yaml.safe_dump(
             {
                 "extension": {"name": "subtoken", "description": tree["blurb"]},
                 "docs": {
@@ -1655,23 +1649,26 @@ def self_test() -> int:  # noqa: C901
             )
             return 1
 
-    # The README-only ban, on the sentence the README used to carry. It is read
-    # through `BANNED_ON_README` and reported by its own phrase, and the same
-    # sentence through the page-wide list alone is clean: that list is what
-    # `description.yml` is held to, and the descriptor still says this.
+    # The word-order ban, on the sentence a page once carried. It is in the list
+    # both pages are read against, and it is reported by its own phrase. The
+    # sentence that says the opposite has to pass, and it spells `word order`
+    # too: a ban on those two words alone would report the quality section.
     the_old_sentence = "Word order still matters, and different words still give different vectors."
-    found = page_problems("a_file", the_old_sentence, BANNED_ON_README)
+    found = page_problems("a_file", the_old_sentence)
     if not any("contains 'word order still matters'" in problem for problem in found):
         print(
-            f"self-test FAILED: the README's old word-order sentence was not reported by "
+            f"self-test FAILED: the old word-order sentence was not reported by "
             f"'word order still matters': {found}",
             file=sys.stderr,
         )
         return 1
-    if page_problems("a_file", the_old_sentence) != []:
+    the_true_sentence = (
+        "It also does not read word order. A Model2Vec vector is the mean of its token vectors."
+    )
+    if page_problems("a_file", the_true_sentence) != []:
         print(
-            "self-test FAILED: the page-wide list reported the word-order sentence, and the "
-            f"descriptor is held to that list: {page_problems('a_file', the_old_sentence)}",
+            f"self-test FAILED: the sentence saying word order is not read was reported as "
+            f"saying it is: {page_problems('a_file', the_true_sentence)}",
             file=sys.stderr,
         )
         return 1
@@ -1963,8 +1960,9 @@ def self_test() -> int:  # noqa: C901
             },
             f"{DESCRIPTOR} (the rendered page) contains 'not published to the community registry'",
         ),
-        # The README-only ban through `run`. The README's own sentence used to be
-        # the opposite of its quality section.
+        # The word-order ban through `run`, on each page. A sentence saying word
+        # order matters is the opposite of the quality section, and the registry
+        # entry is the page a stranger reads first.
         (
             "the README saying word order still matters",
             {
@@ -1975,6 +1973,17 @@ def self_test() -> int:  # noqa: C901
                 )
             },
             f"{README} contains 'word order still matters'",
+        ),
+        (
+            "the registry entry's body saying word order still matters",
+            {
+                "extended": extended_page.replace(
+                    "inside DuckDB.",
+                    "inside DuckDB. Word order still matters, and different words still give "
+                    "different vectors.",
+                )
+            },
+            f"{DESCRIPTOR} (the rendered page) contains 'word order still matters'",
         ),
         (
             "the bundled model moved off the revision the figures were published against",
@@ -1999,16 +2008,22 @@ def self_test() -> int:  # noqa: C901
             )
             return 1
 
-    # The README-only ban stops at the README. `description.yml` carries the same
-    # sentence in the text the registry renders, so the same words on the
-    # descriptor's page leave `run` at exit 0 until that copy is corrected.
+    # The ban is on the page and not on the file. A comment above the descriptor's
+    # fields is not rendered by the registry, so the sentence the case above puts
+    # in `docs.extended_description` is left alone there. A scan of the file's
+    # raw text would report it, which is why this case is run through `run`.
     code, report = staged_run(
-        {**clean_tree, "blurb": "Word order still matters, and different words still differ."}
+        {
+            **clean_tree,
+            "header": "# Word order still matters, and different words still give different "
+            "vectors.\n",
+        }
     )
     if code != 0:
         print(
-            f"self-test FAILED: the word-order sentence on the registry entry's page exited "
-            f"{code}, and the ban on it is scoped to {README}. What it printed: {report}",
+            f"self-test FAILED: the word-order sentence in a comment above the descriptor, "
+            f"which the registry does not render, exited {code} rather than 0. What it "
+            f"printed: {report}",
             file=sys.stderr,
         )
         return 1
@@ -2036,14 +2051,15 @@ def self_test() -> int:  # noqa: C901
         return 1
 
     registry_denials = sum(1 for _, reason in BANNED_ON_PAGE if reason == REGISTRY_DENIAL)
+    word_order_claims = sum(1 for _, reason in BANNED_ON_PAGE if reason == WORD_ORDER_READ)
     print(
         f"self-test ok: {len(FIGURES)} measured figures, {len(CLAIMS)} pinned claims, "
         f"{len(TABLE_ROWS)} summary-table rows read cell by cell, {len(DIRECTIONAL_SERIES)} "
         f"series that must be quoted whole, {len(UNIVERSAL_WORDS)} scanned quantifiers with "
         f"{len(ALLOWED_UNIVERSALS)} recorded exception(s), {len(BANNED_IN_SECTION)} banned "
-        f"hedges and {len(BANNED_ON_PAGE)} page-wide banned phrases, the speed vocabulary and the "
-        f"{registry_denials} that deny the registry, and {len(BANNED_ON_README)} phrase(s) "
-        f"banned in {README} alone; 13% rounds onto 0.13185 and "
+        f"hedges and {len(BANNED_ON_PAGE)} page-wide banned phrases, the speed vocabulary, the "
+        f"{registry_denials} that deny the registry and the {word_order_claims} that says word "
+        f"order matters; 13% rounds onto 0.13185 and "
         f"14% and 45% do not; a renamed heading, an empty section reported as empty rather "
         f"than as its missing claims, an unmeasured quantity, a dropped claim, two figures "
         f"swapped between corpora in prose and in the table, the region sentence's two corpora "
@@ -2052,8 +2068,8 @@ def self_test() -> int:  # noqa: C901
         f"wording moved, an exception no page writes, a hedge reinstated in a sentence with "
         f"nothing else wrong with it, a speed figure outside the quality section and a speed "
         f"figure inside a fenced example, a registry denial wrapped across two SQL comment "
-        f"lines, the README saying word order still matters, a one-sided figure in either "
-        f"direction, the same "
+        f"lines, the README and the registry entry saying word order still matters, a one-sided "
+        f"figure in either direction, the same "
         f"figures in a different order, a figure written a different number of times, a "
         f"registered figure no page writes and a bumped model revision are each reported; "
         f"`in each case` and `bar none` are seen through the whole words `each` and `none` "
@@ -2062,7 +2078,8 @@ def self_test() -> int:  # noqa: C901
         f"on one page alone, a figure and a permitted universal neither page writes, a speed "
         f"figure below the quality section, in the registry entry's published SQL example and "
         f"in its one-line blurb, a file missing from the tree and a descriptor with an empty "
-        f"body — with this file run as a process for `main`'s own dispatch to it; and a table "
+        f"body, and the word-order sentence left alone in a comment the registry does not "
+        f"render — with this file run as a process for `main`'s own dispatch to it; and a table "
         f"row with a corpus column deleted, a partial series reached through `region_problems` "
         f"rather than called directly, a prose line carrying a pipe and a separator row not "
         f"read as table rows, a missing section not compared against a present one, and a "
