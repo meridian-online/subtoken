@@ -1,4 +1,4 @@
--- AC4: repeating a query over unchanged input does not re-embed, keyed on
+-- Repeating a query over unchanged input does not re-embed, keyed on
 -- content and model version.
 --
 -- The content half is here. The model-version half cannot be shown from SQL —

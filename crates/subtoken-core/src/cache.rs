@@ -441,7 +441,7 @@ mod tests {
 
     /// The same text under two different models keys to two different entries.
     ///
-    /// This is AC4's "keyed on content **and** model version". Without it a
+    /// The cache is keyed on content **and** model version. Without it a
     /// model swap would serve vectors from the previous model, which no other
     /// assertion in this crate would notice.
     #[test]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail if anything that can open a socket is linked into the extension.
 
-AC2 says the model loads with no network. A test that calls `subtoken_embed()` and gets a
+The bundled model loads with no network. A test that calls `subtoken_embed()` and gets a
 vector cannot prove that: it proves the model was found, not that no other code
 path could have gone looking for it. What proves it is the absence of an HTTP or
 TLS client from the tree at all, and that is mechanical.

@@ -1,4 +1,4 @@
--- AC2: the model is bundled in the extension binary and loads on first call
+-- The model is bundled in the extension binary and loads on first call
 -- with no network and no configuration.
 --
 -- The runner executes this with HOME and every model-cache variable pointed at

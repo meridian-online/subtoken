@@ -87,7 +87,8 @@ jobs:
       - name: Build and package the extension
         run: make extension
 
-      # AC2's other half. The self-test runs first so a checker that has stopped
+      # The no-network property, checked on the binary: nothing that can open a
+      # socket is linked in. The self-test runs first so a checker that has stopped
       # matching anything is caught before its clean report is believed.
       - name: Nothing in the artifact can open a socket
         run: |

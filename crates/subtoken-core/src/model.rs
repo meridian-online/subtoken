@@ -389,7 +389,7 @@ mod tests {
 
     /// The embedded assets are the published release, byte for byte.
     ///
-    /// AC5's quality figures were measured against `potion-base-8M`. A swapped,
+    /// The published quality figures were measured against `potion-base-8M`. A swapped,
     /// truncated or re-serialised asset would keep every other test green while
     /// invalidating every published claim, so the bytes are pinned here.
     #[test]
@@ -494,7 +494,7 @@ mod tests {
         }
     }
 
-    /// AC3 + AC5: the *token* boundary between "clipped" and "not", pinned in
+    /// The *token* boundary between "clipped" and "not", pinned in
     /// both directions with a probe built to actually show truncation.
     ///
     /// A text of one repeated token cannot show this: the mean of 512 copies of
@@ -564,7 +564,7 @@ mod tests {
         );
     }
 
-    /// AC1 + AC3 + AC5: the *character* boundary between "clipped" and "not" —
+    /// The *character* boundary between "clipped" and "not" —
     /// the one `subtoken_is_truncated` used to be structurally blind to.
     ///
     /// `model2vec_rs` cuts the raw string to `MAX_TOKENS * median_token_length`
@@ -793,7 +793,7 @@ mod tests {
                 false,
                 true,
             ),
-            // AC7, twice. Both are far past the character cut and neither
+            // Two probes that lose nothing. Both are far past the character cut and neither
             // loses an id: `embed` of either is the zero vector with or
             // without the cap.
             probe("five thousand spaces", " ".repeat(5000), false, false),
@@ -806,7 +806,7 @@ mod tests {
         ]
     }
 
-    /// AC4: `embed` returns what it returned at `b1c1e03`, for every probe.
+    /// `embed` returns what it returned at `b1c1e03`, for every probe.
     ///
     /// `conform(inner.encode_single(text), dim)` *is* the body `embed` had at
     /// `b1c1e03`, so this is that implementation and this one answering the
@@ -859,7 +859,7 @@ mod tests {
         .expect("conform")
     }
 
-    /// AC1, AC3, AC6, AC7, AC9: `is_truncated` is true exactly when the cap
+    /// `is_truncated` is true exactly when the cap
     /// changed the vector, on a corpus that can tell the two apart.
     ///
     /// Two assertions per probe, and the second is the one that does not
@@ -1096,7 +1096,7 @@ mod tests {
         texts
     }
 
-    /// AC7: text that loses nothing is not reported clipped, however long it
+    /// Text that loses nothing is not reported clipped, however long it
     /// runs.
     ///
     /// The character cut fires for any text over 3072 characters whether or not

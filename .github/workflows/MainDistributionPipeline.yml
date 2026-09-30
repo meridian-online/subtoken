@@ -55,7 +55,7 @@ jobs:
       # Must equal description.yml's `excluded_platforms`.
       exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;linux_amd64_musl;linux_arm64_musl;windows_amd64_mingw'
 
-  # AC3. The no-network property was established against a locally built macOS
+  # The no-network property was established against a locally built macOS
   # dylib. These are different binaries, from containers and runners this
   # repository has never seen, and a bundled-model extension that picked up an
   # HTTP client through a toolchain would pass every other test in the tree. So
@@ -137,7 +137,8 @@ jobs:
             --artifact downloaded/subtoken.duckdb_extension \
             --require-inspection
 
-      # AC6 on the artifact that would be published, not on a local build.
+      # The version and platform, checked on the artifact that would be published,
+      # not on a local build.
       - name: It reports this tree's version and its own platform
         shell: bash
         run: |
@@ -202,7 +203,7 @@ jobs:
             END;
           "
 
-      # AC4. The registry serves the gzip of the artifact — see
+      # The registry serves the gzip of the artifact — see
       # duckdb/duckdb's scripts/extension-upload-single.sh, which gzips before
       # uploading it as `.duckdb_extension.gz`. So the number that matters to a
       # stranger's download is the compressed one.

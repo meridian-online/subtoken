@@ -1,4 +1,4 @@
--- AC3, from this side of the boundary: subtoken is its own extension with
+-- From this side of the boundary: subtoken is its own extension with
 -- its own surface. finetype is a different repo and a different artifact, and
 -- nothing here uses its prefix or its type contract.
 --

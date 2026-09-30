@@ -370,7 +370,7 @@ DIRECTIONAL_SERIES: tuple[str, ...] = ("kNN overlap", "region retention")
 #: whitespace is collapsed and case folded, so `description.yml` wrapping one
 #: across two lines does not hide it.
 CLAIMS: list[str] = [
-    # AC4: the distinction the page was missing, in both files, and the one
+    # The distinction the page was missing, in both files, and the one
     # weakness that sits on the pairwise side of it.
     "pairwise judgement",
     "ranked retrieval",
@@ -384,12 +384,12 @@ CLAIMS: list[str] = [
     "0.6862 for the bundled model and 0.6815",
     "216 column names in 12 semantic classes",
     "0.3924 against 0.3510",
-    # AC1: the figures that replaced "most" and "a minority".
+    # The figures that replaced "most" and "a minority".
     "71% of what MiniLM's map recovers on long-form prose, 67% on short text, "
     "88% on very short strings",
     "13% are the same rows on long-form prose, 28% on short text, 40% on very short strings",
     "20 nearest neighbours",
-    # AC2: the direction of the shape dependence for neighbourhoods, and the
+    # The direction of the shape dependence for neighbourhoods, and the
     # fact that region structure does not follow it.
     "worst on long prose and mildest on very short strings",
     "13%, then 28%, then 40% as the text gets shorter",

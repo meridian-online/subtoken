@@ -1,4 +1,4 @@
--- AC4 at the scale the README offers, rather than at the scale that is
+-- The cache holds at the scale the README offers, rather than at the scale that is
 -- convenient to write.
 --
 -- Every other assertion about the cache in this suite uses between two and

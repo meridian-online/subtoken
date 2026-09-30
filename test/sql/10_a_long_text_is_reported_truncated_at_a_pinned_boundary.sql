@@ -1,4 +1,4 @@
--- AC1, AC3, AC4, AC5, AC6, AC7: `subtoken_is_truncated` is a SQL-level predicate
+-- `subtoken_is_truncated` is a SQL-level predicate
 -- an analyst can put in a WHERE clause and a count(*); the boundary it reports
 -- is pinned in both directions on BOTH of the limits `subtoken_embed` applies — a token
 -- count and a character count ahead of it; it is false for a text that ran past
@@ -68,7 +68,7 @@ SELECT must('at 513 tokens the marker was dropped before pooling',
     IS NOT DISTINCT FROM
     (SELECT subtoken_embed(filler_only) FROM boundary WHERE filler_tokens = 512));
 
--- AC1 + AC3: the *character* boundary, pinned the same way — the direction
+-- The *character* boundary, pinned the same way — the direction
 -- `subtoken_is_truncated` used to be structurally blind to. `subtoken_embed` cuts the raw
 -- string to 3072 characters before it ever tokenises, so text whose own
 -- characters-per-token sits above this vocabulary's median (6) can lose
@@ -99,7 +99,7 @@ SELECT must('past the character cut the marker was dropped before pooling, thoug
     IS NOT DISTINCT FROM
     (SELECT subtoken_embed(filler_only) FROM char_boundary WHERE filler_reps = 147));
 
--- AC6: both boundaries again, in scripts where a character is not a byte and a
+-- Both boundaries again, in scripts where a character is not a byte and a
 -- character is not a token.
 --
 -- `한 ` is one Hangul syllable and a space — 3 bytes, and 3 tokens, because the
@@ -124,7 +124,7 @@ SELECT must('past the cap the Hangul probe marker was dropped before pooling',
     IS NOT DISTINCT FROM
     (SELECT subtoken_embed(filler_only) FROM hangul_boundary WHERE tokens = 513));
 
--- AC6: a text inside the character cut and outside the same number of BYTES.
+-- A text inside the character cut and outside the same number of BYTES.
 -- `中` is one in-vocabulary ideograph: one token, one character, three bytes.
 -- 200 of them ahead of 130 reps of a 21-character two-token word puts the
 -- character count under 3072 and the byte count over it, at 461 tokens — so a
@@ -144,7 +144,7 @@ SELECT must('and its marker still reaches the mean, so nothing was dropped',
     IS DISTINCT FROM
     (SELECT subtoken_embed(filler_only) FROM byte_against_character));
 
--- AC9: 601 raw ids, 300 of them the unknown-token id that `subtoken_embed` drops before
+-- 601 raw ids, 300 of them the unknown-token id that `subtoken_embed` drops before
 -- it truncates. Counting those toward the cap would clip this text at 512 raw
 -- ids and take the marker; the 301 ids that reach the mean are well inside it.
 CREATE TABLE unknown_tokens AS SELECT * FROM (VALUES
@@ -158,7 +158,7 @@ SELECT must('and its marker still reaches the mean',
     IS DISTINCT FROM
     (SELECT subtoken_embed(filler_only) FROM unknown_tokens));
 
--- AC7: running past a limit is not the same as having lost something to it.
+-- Running past a limit is not the same as having lost something to it.
 -- Both of these are far past the 3072-character cut and neither loses an id.
 SELECT must('five thousand spaces is not reported truncated',
     subtoken_is_truncated(repeat(' ', 5000)) = false);
@@ -173,10 +173,11 @@ SELECT must('and subtoken_embed of it is the zero vector, so there was nothing t
     list_max(subtoken_embed(repeat('工業製品 ', 700))) = 0.0
     AND list_min(subtoken_embed(repeat('工業製品 ', 700))) = 0.0);
 
--- AC1: a WHERE clause and a count(*) over a column, the way an analyst would
+-- A WHERE clause and a count(*) over a column, the way an analyst would
 -- actually ask the question.
--- Rows 5 and 6 are the AC7 pair: long enough to be caught by anything that
--- asks "is this text long" rather than "did this text lose anything".
+-- Rows 5 and 6 are the pair that runs past a limit and loses nothing: long
+-- enough to be caught by anything that asks "is this text long" rather than
+-- "did this text lose anything".
 CREATE TABLE corpus AS SELECT * FROM (VALUES
     (1, 'a maker of industrial fasteners'),
     (2, repeat('steel ', 600) || 'logistics'),
@@ -193,7 +194,7 @@ SELECT must('the WHERE clause names the same two ids',
 SELECT must('the rows that lost nothing are excluded, not merely unmatched',
     (SELECT list_sort(list(id)) FROM corpus WHERE NOT subtoken_is_truncated(description)) = [1, 3, 5, 6]);
 
--- AC4: subtoken_embed() itself is unaffected by subtoken_is_truncated existing alongside
+-- subtoken_embed() itself is unaffected by subtoken_is_truncated existing alongside
 -- it — same vectors as the untruncated-probe assertions above, and the width
 -- and cache-composing behaviour asserted in 01 and 04 are unchanged by this
 -- file having run.
