@@ -56,9 +56,9 @@ extension: build
 test:
 	cargo test --workspace
 
-## AC2's other half: nothing that can open a socket is compiled into the
-## artifact. The self-test runs first, so a checker that has gone blind is
-## caught before its clean report is believed.
+## The no-network property, checked on the binary: nothing that can open a
+## socket is compiled into the artifact. The self-test runs first, so a checker
+## that has gone blind is caught before its clean report is believed.
 no-network: extension
 	python3 scripts/check_no_network_deps.py --self-test
 	python3 scripts/check_no_network_deps.py --artifact $(EXTENSION)

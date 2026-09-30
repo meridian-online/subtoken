@@ -1197,7 +1197,7 @@ MUTATIONS: list[Mutation] = [
 
     # ── the model identity SQL stores beside a vector ────────────────────────
     #
-    # AC1's claim is that changing any one of the three bundled assets moves
+    # The claim is that changing any one of the three bundled assets moves
     # `subtoken_model_id()`, and that the move is visible from SQL. For the two
     # text assets the mutation edits the FILE, which is the altitude the claim
     # lives at: neither edit changes what the model computes — `model2vec_rs`
@@ -1227,7 +1227,7 @@ MUTATIONS: list[Mutation] = [
         expect_red="11_a_stored_vector",
         kind="sql",
     ),
-    # AC1 names the domain the key is derived under, so it is pinned too. The
+    # The domain the key is derived under is part of that claim, so it is pinned too. The
     # domain is what stops the key being confused with a plain SHA-256 of any
     # one asset, and moving it moves every stored id — which is exactly why a
     # build that changed it silently would be the worst kind of release.
@@ -1248,9 +1248,9 @@ MUTATIONS: list[Mutation] = [
         kind="sql",
     ),
     # The scalar stops reporting the key and reports the sentence that carries
-    # twelve characters of it — the exact state the card says an analyst is
-    # stuck in today, so a version of this function that "worked" that way has
-    # to be caught.
+    # twelve characters of it — the state an analyst was in while that sentence was
+    # the only route to the key, so a version of this function that "worked" that
+    # way has to be caught.
     Mutation(
         name="the_model_id_scalar_reports_the_version_sentence",
         file=GLUE,

@@ -73,7 +73,7 @@ SELECT must('the revision is the whole 40-character SHA',
 SELECT must('the licence is the one SOURCE.md records, and the tier is supported',
     (subtoken_models()).licence = 'MIT' AND (subtoken_models()).tier = 'supported');
 
--- AC2's three equalities, each against what the extension DOES rather than
+-- The three equalities, each against what the extension DOES rather than
 -- against another field of the same row.
 
 SELECT must('the row key is the id, so a stored id joins against the catalogue',

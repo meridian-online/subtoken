@@ -323,7 +323,7 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// AC4, at the engine: asking for the same text again does not re-embed.
+    /// At the engine: asking for the same text again does not re-embed.
     ///
     /// `encoded` counts encoder invocations, not cache bookkeeping, so this
     /// fails if the cache is consulted but not honoured.
@@ -552,7 +552,7 @@ mod tests {
         (0..count).map(|i| format!("row number {i}")).collect()
     }
 
-    /// **AC4 at a scale the product is offered at.**
+    /// **Asking again does not re-embed, at a scale the product is offered at.**
     ///
     /// Fifty thousand distinct values, embedded twice. The second pass must
     /// re-embed none of them. The count is absolute rather than derived from

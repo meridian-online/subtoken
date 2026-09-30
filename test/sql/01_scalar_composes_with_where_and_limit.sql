@@ -1,4 +1,4 @@
--- AC1: a scalar function returns a vector for a string value, and composes with
+-- A scalar function returns a vector for a string value, and composes with
 -- WHERE and LIMIT on a filtered subset.
 --
 -- "Composes" is measured, not assumed. `subtoken_cache_stats().encoded`
