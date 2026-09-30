@@ -11,8 +11,6 @@ on:
 #   gate needs no toolchain, no cache and no build, so it finishes in seconds.
 #   It should be the first thing to go red, and it should still report when the
 #   build is queued or cancelled.
-# * A leaked private planning identifier must be reported on every pushed
-#   commit, independent of whether the build succeeds.
 jobs:
   planning-identifiers:
     runs-on: ubuntu-latest
