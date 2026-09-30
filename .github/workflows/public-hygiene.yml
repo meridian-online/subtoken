@@ -8,9 +8,9 @@ on:
 # Deliberately a workflow of its own rather than a job inside `CI`:
 #
 # * `CI` builds the Rust workspace and the extension and takes minutes. This
-#   gate needs no toolchain, no cache and no build: it is `git grep` over
-#   tracked files and finishes in seconds. It should be the first thing to go
-#   red, and it should still report when the build is queued or cancelled.
+#   gate needs no toolchain, no cache and no build, so it finishes in seconds.
+#   It should be the first thing to go red, and it should still report when the
+#   build is queued or cancelled.
 # * A leaked private planning identifier must be reported on every pushed
 #   commit, independent of whether the build succeeds.
 jobs:
@@ -19,8 +19,9 @@ jobs:
     timeout-minutes: 5
     steps:
       # fetch-depth 1 is enough: the gate reads the content of the tracked files
-      # at the checked-out commit, and never history, commit messages or
-      # pull-request text.
+      # at the checked-out commit, less the allowlist file and, for the slug
+      # rule, `vendor/**`, and never history, commit messages or pull-request
+      # text.
       - uses: actions/checkout@v4
 
       # The gate's own regression test runs FIRST. A hygiene gate fails silently
@@ -30,9 +31,10 @@ jobs:
       - name: hygiene gate self-test
         run: ./scripts/check-public-hygiene-selftest.sh
 
-      # No `working-directory`. The gate cd's to the repo root itself and scans
+      # No `working-directory`. The gate cd's to the repo root itself. It scans
       # the content of the tracked files at the checked-out commit, less the
       # allowlist file, which no rule scans, and less `vendor/**`, which the
-      # slug rule skips. Commit messages and pull-request text are outside it.
+      # slug rule skips; history, commit messages and pull-request text are
+      # outside it.
       - name: private planning identifiers
         run: ./scripts/check-public-hygiene.sh
