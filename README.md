@@ -222,5 +222,3 @@ The bundled embedding model is a third-party Model2Vec release. Its publisher **
 ## Credits
 
 Part of the [Meridian](https://meridian.online) project.
-
-see decision-12 for why
