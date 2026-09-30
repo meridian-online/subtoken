@@ -1,0 +1,12 @@
+# Allowlist for scripts/check-public-hygiene.sh.
+#
+# One entry per line, three fields separated by `|`:
+#
+#     <tracked/file/path> | <exact matched text> | <why this is honest text>
+#
+# An entry that suppresses nothing fails the gate, so this list cannot outlive
+# the text it excuses. Line numbers are not part of an entry.
+
+models/potion-base-8M/MODEL_CARD.md | tokenlearn-c4-en-bge-base-v1 | The vendored model card lists, under `datasets:`, the Hugging Face dataset minishlab/tokenlearn-c4-en-bge-base-v1.5 that the upstream model was trained on; it is the upstream author's identifier for a public dataset, and this repository cannot rename it.
+scripts/check_quality_claims.py | notes/10x-faster-embeddings | A sample relative link in the self-test case that shows the speed-claim scan reads a relative link target as an address and not as a claim; it points at no file in this repository, where nothing under notes/ is tracked, and names no other repository.
+scripts/check_quality_claims.py | notes/10x-faster-embeddings.md | The same self-test case, matched by the document-path rule instead of the ledger-path rule: a sample link target inside a test string, not a path to any document.
