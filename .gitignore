@@ -11,3 +11,6 @@ __pycache__/
 # build/subtoken.duckdb_extension, and the community recipe writes
 # build/release/ with the raw cdylib beside it.
 /build/
+# roborev snapshots
+/.roborev/
+.kata.local.toml
