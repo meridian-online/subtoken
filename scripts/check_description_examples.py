@@ -568,8 +568,8 @@ docs:
         problems = descriptor_problems(descriptor, ["subtoken_embed", "a_function_the_page_never_names"])
         expect("a wrong version is caught", any("extension.version" in p for p in problems))
         expect("a wrong repository is caught", any("repo.github" in p for p in problems))
-        expect("an abbreviated ref is caught", any("repo.ref" in p for p in problems))
-        expect("a missing ref_next is caught", any("repo.ref_next" in p for p in problems))
+        expect("an abbreviated ref is caught", any(p.startswith("repo.ref is ") for p in problems))
+        expect("a missing ref_next is caught", any(p.startswith("repo.ref_next is ") for p in problems))
         expect(
             "a registered function the page never names is caught",
             any("a_function_the_page_never_names" in p for p in problems),
