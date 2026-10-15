@@ -5,9 +5,9 @@
 ## builds this repository at `repo.ref` for every platform in the matrix and
 ## publishes the binaries, so `INSTALL subtoken FROM community` works for anyone.
 ##
-## The `repo.ref` below names a commit that carries the build contract in
+## The `repo.ref` and `repo.ref_next` below name a commit that carries the build contract in
 ## `Makefile` and the `extension-ci-tools` submodule. `scripts/check_description_examples.py`
-## asserts only that the ref is a full 40-character SHA, because a check that the commit
+## asserts only that each is a full 40-character SHA, because a check that the commit
 ## carries the contract would go quiet in any clone that no longer has the
 ## object, which is the shape of check this repository keeps deleting.
 ##
@@ -33,7 +33,10 @@ extension:
 
 repo:
   github: meridian-online/subtoken
-  ref: c453860544b53803bb9b830c4818e4f1ad2d4057
+  ref: 3bf95680e23ba6ad23951023bd65432f53877485
+  # The registry builds `ref_next` against the next DuckDB release before it
+  # ships; without it that build skips and passes having built nothing.
+  ref_next: 3bf95680e23ba6ad23951023bd65432f53877485
 
 docs:
   hello_world: |

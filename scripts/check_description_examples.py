@@ -446,6 +446,15 @@ def descriptor_problems(
             f"repo.ref is {ref!r}; the registry pins a full 40-character commit SHA, and an "
             f"abbreviated one or a branch name is not a pin"
         )
+    # The registry's pre-release leg builds `ref_next` against the next DuckDB
+    # release, and it runs with require_ref_next: without the key it resolves
+    # no ref, skips, and passes having built nothing against that release.
+    ref_next = str(repo.get("ref_next", ""))
+    if not re.fullmatch(r"[0-9a-f]{40}", ref_next):
+        problems.append(
+            f"repo.ref_next is {ref_next!r}; the registry's pre-release build skips an entry "
+            f"without a full 40-character SHA here, and passes having built nothing"
+        )
 
     platforms = known_platforms()
     if platforms is None:
@@ -559,7 +568,8 @@ docs:
         problems = descriptor_problems(descriptor, ["subtoken_embed", "a_function_the_page_never_names"])
         expect("a wrong version is caught", any("extension.version" in p for p in problems))
         expect("a wrong repository is caught", any("repo.github" in p for p in problems))
-        expect("an abbreviated ref is caught", any("repo.ref" in p for p in problems))
+        expect("an abbreviated ref is caught", any(p.startswith("repo.ref is ") for p in problems))
+        expect("a missing ref_next is caught", any(p.startswith("repo.ref_next is ") for p in problems))
         expect(
             "a registered function the page never names is caught",
             any("a_function_the_page_never_names" in p for p in problems),
