@@ -72,7 +72,7 @@ The v1 build loads on 2.0, so the gate moves first and every later task is teste
 
 **Files:**
 - Create: `crates/subtoken-duckdb-sys/Cargo.toml` (`publish = false`, MIT, no dependencies)
-- Create: `crates/subtoken-duckdb-sys/vendor/duckdb_v2.h`, `vendor/duckdb_extension_v2.h`, `vendor/VENDORED.md` (tag, commit, date)
+- Create: `crates/subtoken-duckdb-sys/vendor/duckdb_v2.h`, `vendor/duckdb_extension_v2.h`, `vendor/SOURCE.txt` (tag, commit, date)
 - Create: `crates/subtoken-duckdb-sys/src/bindings.rs` (generated)
 - Create: `crates/subtoken-duckdb-sys/src/lib.rs`
 - Create: `scripts/regenerate_v2_bindings.sh`
@@ -86,7 +86,7 @@ The v1 build loads on 2.0, so the gate moves first and every later task is teste
   - `pub unsafe fn init(input: *mut duckdb_v2_extension_input) -> bool`: calls `get_api(extension, API_VERSION)`. Returns `false` on NULL. Otherwise copies the table into a `static TABLE: OnceLock<duckdb_ext_api_v2>` and returns `true`.
   - `pub fn api() -> &'static duckdb_ext_api_v2`: panics with "subtoken_duckdb_sys::init was not called" if the table is unset.
 
-- [ ] **Step 1:** Copy both headers from the `v2.0.0` tag with `git -C ~/github/duckdb/duckdb show v2.0.0:src/include/<file>`. Write `VENDORED.md`.
+- [ ] **Step 1:** Copy both headers from the `v2.0.0` tag with `git -C ~/github/duckdb/duckdb show v2.0.0:src/include/<file>`. Write `SOURCE.txt`.
 - [ ] **Step 2:** Write `scripts/regenerate_v2_bindings.sh [--check]`.
   - It requires `bindgen --version` to equal a pinned version, and prints the `cargo install bindgen-cli --locked --version <pin>` line if it does not.
   - It runs bindgen over `vendor/duckdb_extension_v2.h` with `--allowlist-type 'duckdb_.*|idx_t' --allowlist-var 'DUCKDB_.*' --no-layout-tests --use-core`, plus the `-DDUCKDB_EXTENSION_API_VERSION_*` defines the header needs for v2.0.0.

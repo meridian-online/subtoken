@@ -59,7 +59,7 @@ Waiting has no end date: nothing on duckdb-rs's branches or open pull requests a
 
 How the bindings are kept honest:
 
-- Both headers, `src/include/duckdb_v2.h` and `src/include/duckdb_extension_v2.h`, are vendored byte for byte from DuckDB's `v2.0.0` tag under `crates/subtoken-duckdb-sys/vendor/`, with a `VENDORED.md` naming the tag and commit.
+- Both headers, `src/include/duckdb_v2.h` and `src/include/duckdb_extension_v2.h`, are vendored byte for byte from DuckDB's `v2.0.0` tag under `crates/subtoken-duckdb-sys/vendor/`, with a `SOURCE.txt` naming the tag and commit.
 - `scripts/regenerate_v2_bindings.sh` runs a pinned `bindgen` CLI over them and writes `crates/subtoken-duckdb-sys/src/bindings.rs`. The output is committed, so no build needs libclang. `--check` regenerates into a temporary file and fails on any difference. A CI job runs `--check` on Linux, so a hand edit to the bindings, or a header bump without regeneration, goes red.
 - bindgen is a tool run by the script, not a Cargo dependency, so it adds nothing to the dependency tree. bindgen-cli is BSD-3-Clause, and the script installs it with `cargo install --locked` at a pinned version.
 - The table is requested with `get_api(extension, "v2.0.0")`. The table layout for that version is fixed by DuckDB, so the binary loads into 2.0.0 and every later 2.x that still serves the v2.0.0 table. That is the same promise the v1.2.0 floor makes today.
