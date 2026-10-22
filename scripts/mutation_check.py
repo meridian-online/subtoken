@@ -1172,6 +1172,23 @@ MUTATIONS: list[Mutation] = [
         expect_red="12_a_compressed_column",
         kind="sql",
     ),
+    # A constant or dictionary input reaches the reader with a selection vector
+    # whose entries are not 0..n; reading by row number instead of through it
+    # returns the wrong strings (or reads past the physical data).
+    Mutation(
+        name="the_selection_vector_is_ignored",
+        file=CAPI,
+        old=(
+            "                let idx = if v.sel.is_null() {\n"
+            "                    i\n"
+            "                } else {\n"
+            "                    *v.sel.add(i) as usize\n"
+            "                };"
+        ),
+        new="                let idx = i;",
+        expect_red="12_a_compressed_column",
+        kind="sql",
+    ),
     # A running offset that is not reset between chunks. Invisible over the five
     # rows every other output-shape assertion uses, because five rows are one
     # chunk; fatal across three.

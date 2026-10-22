@@ -806,6 +806,18 @@ mod tests {
     }
 
     #[test]
+    fn a_short_inline_value_is_zero_padded_to_sixteen_bytes() {
+        // SAFETY: an inline value never touches the arena.
+        let b = unsafe { encode_bytes(b"abc", |_| panic!("arena used")) };
+        // SAFETY: `duckdb_v2_bytes` is 16 bytes of plain data, all initialised.
+        let raw: [u8; 16] = unsafe { std::mem::transmute(b) };
+        assert_eq!(&raw[..4], 3u32.to_ne_bytes());
+        assert_eq!(&raw[4..7], b"abc");
+        // DuckDB compares all 16 bytes, so everything after the text is zero.
+        assert_eq!(&raw[7..], [0u8; 9]);
+    }
+
+    #[test]
     fn thirteen_bytes_go_to_the_arena() {
         let mut arena = vec![0u8; 13];
         let mut calls = Vec::new();

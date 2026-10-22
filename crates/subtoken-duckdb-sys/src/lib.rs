@@ -30,8 +30,8 @@ static TABLE: OnceLock<duckdb_ext_api_v2> = OnceLock::new();
 /// `false` when `get_api` returns NULL, which means the load already failed.
 ///
 /// The extension is valid only against the exact DuckDB release its headers
-/// were vendored from (see `vendor/SOURCE.txt`). A new DuckDB release means new
-/// headers and regenerated bindings.
+/// were vendored from (see `vendor/SOURCE.txt`). The README's "Building it"
+/// section lists what a new DuckDB release changes.
 ///
 /// # Safety
 ///
@@ -77,6 +77,18 @@ pub fn api() -> &'static duckdb_ext_api_v2 {
 mod tests {
     use super::*;
     use std::ptr;
+
+    #[test]
+    fn vendored_headers_come_from_the_release_api_version_names() {
+        // `init` copies the table on the strength of the headers being the ones
+        // from the DuckDB release `API_VERSION` names; SOURCE.txt records which.
+        let tag = include_str!("../vendor/SOURCE.txt")
+            .lines()
+            .find_map(|line| line.strip_prefix("tag:"))
+            .map(str::trim)
+            .expect("SOURCE.txt has a tag: line");
+        assert_eq!(tag, API_VERSION.to_str().unwrap());
+    }
 
     unsafe extern "C" fn get_api_null(
         _extension: duckdb_v2_extension_handle,

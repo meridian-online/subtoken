@@ -89,7 +89,7 @@ docs:
 
     ## Requirements
 
-    The extension needs DuckDB 2.0.0 exactly. DuckDB 2.0 ships its v2 C API as unstable, so a build loads only on the DuckDB release it was built for; each DuckDB release (2.0.1 next) gets a rebuild. If you are on DuckDB 1.5, `INSTALL subtoken FROM community` fetches the earlier build, which stays pinned to the last commit that targeted the v1 API.
+    The extension needs DuckDB 2.0.0 exactly. DuckDB 2.0 ships its v2 C API as unstable, so a build loads only on the DuckDB release it was built for; each DuckDB release gets a rebuild. If you are on DuckDB 1.5, `INSTALL subtoken FROM community` fetches the earlier build, which stays pinned to the last commit that targeted the v1 API.
 
     `duckdb_functions()` describes each function, with real parameter names, a description, a runnable example and a category:
 

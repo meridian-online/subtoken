@@ -65,17 +65,14 @@
 //! answers no for a text that is past a cut but lost nothing to it, which is
 //! the question an analyst is actually asking. `subtoken_is_truncated(NULL)` is
 //! `NULL`, matching `subtoken_embed(NULL)`.
-
 //!
 //! # Registration on DuckDB 2.0
 //!
 //! The extension is built on DuckDB 2.0's v2 C API, which DuckDB 2.0.0 ships
 //! as unstable. The artifact's footer is `C_STRUCT_UNSTABLE` with DuckDB
-//! version `v2.0.0`, so it loads on exactly that DuckDB release; each new
-//! release means vendoring its headers into `subtoken-duckdb-sys`,
-//! regenerating the bindings if they changed, and moving
-//! [`MIN_DUCKDB_VERSION`] and the Makefile's `TARGET_DUCKDB_VERSION`, then
-//! rebuilding and changing the registry entry.
+//! version `v2.0.0`, so it loads on exactly that DuckDB release. The README's
+//! "Building it" section lists what a new release changes, starting with
+//! [`MIN_DUCKDB_VERSION`].
 //!
 //! The crate carries its own v2 bindings instead of depending on duckdb-rs:
 //! `subtoken-duckdb-sys` vendors DuckDB v2.0.0's headers, and

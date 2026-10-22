@@ -315,8 +315,8 @@ def self_test() -> int:
     # The two expectations really are read out of the tree, not defaulted.
     version = version_in_cargo_toml()
     expect("Cargo.toml yields a version", bool(re.fullmatch(r"\d+\.\d+\.\d+", version)))
-    floor = min_duckdb_version()
-    expect("lib.rs yields a DuckDB version", bool(re.fullmatch(r"v\d+\.\d+\.\d+", floor)))
+    target = min_duckdb_version()
+    expect("lib.rs yields a DuckDB version", bool(re.fullmatch(r"v\d+\.\d+\.\d+", target)))
 
     # And a manifest whose [workspace.package] has no version is an error rather
     # than a fallback onto some other table's version.
@@ -338,7 +338,7 @@ def self_test() -> int:
         f"self-test ok: the trailer reader recovers all {len(FIELD_NAMES)} fields from a "
         f"synthetic artifact, reports a stale version, a wrong DuckDB version, a wrong "
         f"platform and the stable ABI, refuses a raw library and a shifted trailer, and "
-        f"reads {version} out of Cargo.toml and {floor} out of lib.rs"
+        f"reads {version} out of Cargo.toml and {target} out of lib.rs"
     )
     return 0
 
@@ -379,8 +379,8 @@ def main() -> int:
             print(f"FAIL: {error}", file=sys.stderr)
             return 1
         expected_version = version_in_cargo_toml()
-        expected_floor = min_duckdb_version()
-        problems = disagreements(fields, expected_version, expected_floor, args.expect_platform)
+        expected_target = min_duckdb_version()
+        problems = disagreements(fields, expected_version, expected_target, args.expect_platform)
         if problems:
             print(f"FAIL: {args.artifact} does not report this tree:", file=sys.stderr)
             for problem in problems:

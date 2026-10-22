@@ -6,7 +6,9 @@
 # The output is committed so no ordinary build needs libclang. bindgen is a tool
 # this script runs, not a Cargo dependency, and it is pinned: a different
 # bindgen version writes different output, so the check would go red for the
-# wrong reason.
+# wrong reason. rustfmt, from the stable toolchain, also shapes the output and
+# is not pinned: a rustfmt release that formats differently turns the check red,
+# and the fix is to regenerate and commit.
 #
 # libclang: bindgen loads it at run time. On macOS it falls back to Xcode's
 # Command Line Tools (this script sets LIBCLANG_PATH there if unset). On Linux
@@ -19,8 +21,8 @@
 set -euo pipefail
 
 BINDGEN_VERSION="0.73.2"
-# The libclang major version used on Linux. Kept beside the bindgen pin so both
-# inputs to the output are named, and enforced, in one place.
+# The libclang major version used on Linux. Kept beside the bindgen pin so the
+# pinned inputs are named, and enforced, in one place.
 LIBCLANG_MAJOR="18"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
