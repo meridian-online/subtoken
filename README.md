@@ -14,6 +14,18 @@ WHERE industry = 'manufacturing'
 LIMIT 100;
 ```
 
+## Requirements
+
+The extension needs DuckDB 2.0.0 exactly. DuckDB 2.0 ships its v2 C API as unstable, so a build loads only on the DuckDB release it was built for; each DuckDB release (2.0.1 next) gets a rebuild. If you are on DuckDB 1.5, `INSTALL subtoken FROM community` fetches the earlier build, which stays pinned to the last commit that targeted the v1 API.
+
+`duckdb_functions()` describes each function, with real parameter names, a description, a runnable example and a category:
+
+```sql
+SELECT function_name, parameters, description, examples, categories
+FROM duckdb_functions()
+WHERE function_name LIKE 'subtoken_%';
+```
+
 ## Why this exists
 
 Every other route to an embedding inside DuckDB is either a transformer forward pass or a call to a hosted provider. Over a large text column the first is slow enough that people leave SQL to do it, and the second is an invoice you find out about afterwards. A static embedding is neither: it is a token lookup and a mean, so it is bounded, local, and free at the margin.
@@ -191,6 +203,8 @@ make mutation-check   # break the code on purpose and require the tests to notic
 ```
 
 `make check` and `make community-check` are what CI runs. `make mutation-check` is not, because each of its SQL mutations rebuilds the release binary; it applies a table of deliberate defects one at a time and fails unless the test named against each one reddens, which is the difference between a suite that is green and a suite that is watching. CI does run `scripts/mutation_check.py --check-anchors`, which applies no mutation and asserts only that each one still names a line that exists.
+
+subtoken carries its own bindings to the v2 C API rather than depending on duckdb-rs: `subtoken-duckdb-sys` vendors DuckDB v2.0.0's headers, `scripts/regenerate_v2_bindings.sh` generates the Rust bindings from them, and CI fails if the checked-in bindings drift. The artifact's footer is `C_STRUCT_UNSTABLE` pinned to `v2.0.0`. Supporting a new DuckDB release means vendoring its headers, regenerating the bindings, moving `TARGET_DUCKDB_VERSION` in the Makefile and `MIN_DUCKDB_VERSION` in the code, rebuilding, and then changing the registry entry. The text `duckdb_functions()` shows lives in the `DOCS` table in `crates/subtoken-duckdb/src/lib.rs`; `scripts/check_documented_surface.py` and SQL test 13 hold it to the registered catalog.
 
 `make community-check` is the local form of the registry's own build. It needs `git submodule update --init --recursive` for `extension-ci-tools`, and it creates `configure/`, which is gitignored. `configure/extension_version.txt` must never be tracked: the upstream recipe writes that file only when it is absent, so a tracked copy would never be refreshed and would stamp a stale version onto every published artifact.
 

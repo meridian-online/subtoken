@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/subtoken-core", "crates/subtoken-duckdb", "crates/subtoken-duckdb-sys"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/meridian-online/subtoken"

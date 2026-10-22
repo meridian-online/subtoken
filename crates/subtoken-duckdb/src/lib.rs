@@ -74,7 +74,18 @@
 //! version `v2.0.0`, so it loads on exactly that DuckDB release; each new
 //! release means vendoring its headers into `subtoken-duckdb-sys`,
 //! regenerating the bindings if they changed, and moving
-//! [`MIN_DUCKDB_VERSION`] and the Makefile's `TARGET_DUCKDB_VERSION`.
+//! [`MIN_DUCKDB_VERSION`] and the Makefile's `TARGET_DUCKDB_VERSION`, then
+//! rebuilding and changing the registry entry.
+//!
+//! The crate carries its own v2 bindings instead of depending on duckdb-rs:
+//! `subtoken-duckdb-sys` vendors DuckDB v2.0.0's headers, and
+//! `scripts/regenerate_v2_bindings.sh` generates the bindings from them; CI
+//! fails if the checked-in bindings drift from the headers.
+//!
+//! What `duckdb_functions()` shows for each function (parameter names,
+//! description, example, category) comes from the `DOCS` table in this file.
+//! `scripts/check_documented_surface.py` and SQL test 13 hold it to the
+//! registered catalog.
 //!
 //! DuckDB calls [`subtoken_init_c_api_v2`] at `LOAD`. It fetches the API table
 //! (`subtoken_duckdb_sys::init`), takes a factory from the load's context, and
