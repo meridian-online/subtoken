@@ -12,9 +12,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # The DuckDB the SQL tests load the artifact into. The artifact declares a
-  # v1.2.0 stable-ABI floor, so it is expected to load on anything from 1.2 up;
-  # this is the version the gate actually exercises.
+  # The DuckDB the SQL tests load the artifact into. The artifact is built on
+  # DuckDB 2.0's unstable v2 C API and its trailer names this exact release, so
+  # it loads on this version only.
   DUCKDB_VERSION: v2.0.0
 
 jobs:

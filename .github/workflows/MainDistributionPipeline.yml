@@ -169,7 +169,7 @@ jobs:
           # Python rather than tar: it is already installed on all five
           # runners and spells the same on Windows. The next step still sets
           # the executable bit, so it does not depend on the archive keeping it.
-          python -c "import tarfile; tarfile.open('duckdb_cli.tar.gz').extractall('cli')"
+          python -c "import tarfile; tarfile.open('duckdb_cli.tar.gz').extractall('cli', filter='data')"
 
       - name: It LOADs, and answers with a vector
         if: matrix.load
@@ -194,7 +194,7 @@ jobs:
           # `error()` raises, and the CLI exits non-zero when a statement
           # raises, so a wrong answer fails this step rather than printing.
           "$cli" -unsigned -init empty_init.sql -batch -noheader -list -c "
-            SET extension_directory='$extdir';
+            SET extension_directories=['$extdir'];
             LOAD '$artifact';
             SELECT subtoken_version();
             SELECT CASE

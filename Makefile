@@ -3,10 +3,12 @@
 # `make check` is the whole gate, and it is what .github/workflows/ci.yml runs.
 
 EXTENSION_NAME := subtoken
-# The stable C_STRUCT ABI floor the packaged artifact declares, so one build
-# loads on DuckDB 1.2 and later. Mirrors MIN_DUCKDB_VERSION in
-# crates/subtoken-duckdb/src/lib.rs.
-TARGET_DUCKDB_VERSION := v1.2.0
+# The exact DuckDB release the packaged artifact is built for. The extension
+# uses DuckDB 2.0's v2 C API, which 2.0.0 ships as unstable, so the trailer
+# carries the C_STRUCT_UNSTABLE ABI and DuckDB loads the artifact on this
+# release only. Mirrors MIN_DUCKDB_VERSION in crates/subtoken-duckdb/src/lib.rs.
+TARGET_DUCKDB_VERSION := v2.0.0
+ABI_TYPE := C_STRUCT_UNSTABLE
 EXTENSION_VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 
 UNAME_S := $(shell uname -s)
@@ -50,6 +52,7 @@ extension: build
 		--out-file $(EXTENSION) \
 		--platform $(DUCKDB_PLATFORM) \
 		--duckdb-version $(TARGET_DUCKDB_VERSION) \
+		--abi-type $(ABI_TYPE) \
 		--extension-version $(EXTENSION_VERSION)
 
 ## Rust unit tests: the model, the cache and the embedding contract.
@@ -142,9 +145,13 @@ clean:
 # `scripts/check_artifact_version.py --compare` fails when the trailers they
 # write stop agreeing.
 #
-# STABLE C API: USE_UNSTABLE_C_API is deliberately unset, so the trailer carries
-# the C_STRUCT ABI at the TARGET_DUCKDB_VERSION floor set at the top of this
-# file and one binary stays loadable across DuckDB 1.2 and later.
+# UNSTABLE C API: USE_UNSTABLE_C_API is set to 1, so base.Makefile passes
+# `--abi-type C_STRUCT_UNSTABLE` to its metadata script and the trailer names
+# the exact TARGET_DUCKDB_VERSION set at the top of this file, matching what
+# `make extension` stamps. It is set here with `:=`, before the include, and the
+# reusable workflow passes its settings through the environment, which a
+# makefile assignment overrides, so the registry's build gets the same value.
+USE_UNSTABLE_C_API := 1
 
 COMMUNITY_RECIPE := extension-ci-tools/makefiles/c_api_extensions/base.Makefile
 
@@ -209,14 +216,12 @@ debug:   extension_version build_extension_library_debug   build_extension_with_
 ## Only the cdylib, not the whole workspace: subtoken-core's dev-dependencies
 ## and test binaries have no business in a distribution build.
 build_extension_library_release: check_configure
-	DUCKDB_EXTENSION_NAME=$(EXTENSION_NAME) DUCKDB_EXTENSION_MIN_DUCKDB_VERSION=$(TARGET_DUCKDB_VERSION) \
-		cargo build -p subtoken-duckdb --release $(COMMUNITY_CARGO_TARGET)
+	cargo build -p subtoken-duckdb --release $(COMMUNITY_CARGO_TARGET)
 	mkdir -p $(EXTENSION_BUILD_PATH)/release/extension/$(EXTENSION_NAME)
 	cp $(COMMUNITY_CARGO_OUT)/release/$(EXTENSION_LIB_FILENAME) $(EXTENSION_BUILD_PATH)/release/$(EXTENSION_LIB_FILENAME)
 
 build_extension_library_debug: check_configure
-	DUCKDB_EXTENSION_NAME=$(EXTENSION_NAME) DUCKDB_EXTENSION_MIN_DUCKDB_VERSION=$(TARGET_DUCKDB_VERSION) \
-		cargo build -p subtoken-duckdb $(COMMUNITY_CARGO_TARGET)
+	cargo build -p subtoken-duckdb $(COMMUNITY_CARGO_TARGET)
 	mkdir -p $(EXTENSION_BUILD_PATH)/debug/extension/$(EXTENSION_NAME)
 	cp $(COMMUNITY_CARGO_OUT)/debug/$(EXTENSION_LIB_FILENAME) $(EXTENSION_BUILD_PATH)/debug/$(EXTENSION_LIB_FILENAME)
 

@@ -37,12 +37,6 @@ sha2 = "0.10"
 # through JSON and read `model.unk_token`. There is no public accessor for it.
 serde_json = "1"
 
-# Pinned exactly, matching the DuckDB C API surface this artifact is built
-# against. The stable C_STRUCT ABI floor the packaged artifact declares is
-# `MIN_DUCKDB_VERSION` in crates/subtoken-duckdb/src/lib.rs.
-duckdb = { version = "=1.10505.0", features = ["loadable-extension", "vscalar"] }
-libduckdb-sys = "=1.10505.0"
-
 subtoken-core = { path = "crates/subtoken-core" }
 subtoken-duckdb-sys = { path = "crates/subtoken-duckdb-sys" }
 

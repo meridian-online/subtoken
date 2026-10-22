@@ -202,11 +202,14 @@ impl ScalarFunction {
     }
 
     /// Sets the return type, as SQL type text.
-    pub fn returns(mut self, ty: String) -> Self {
-        self.returns = Some(ty);
+    pub fn returns(mut self, ty: impl Into<String>) -> Self {
+        self.returns = Some(ty.into());
         self
     }
 
+    // No function passes docs yet; the docs table that does lands next to the
+    // seven functions, and takes this allow with it.
+    #[allow(dead_code)]
     pub fn docs(mut self, docs: &'static Docs) -> Self {
         self.docs = Some(docs);
         self
@@ -219,6 +222,14 @@ impl ScalarFunction {
         self
     }
 
+    /// Sets the function's body.
+    ///
+    /// `exec` reads and writes through [`Call`], whose readers and writers
+    /// trust that each argument and the result have the SQL types this
+    /// builder registered: `varchar_arg` reads a VARCHAR, `write_float_lists`
+    /// writes a `FLOAT[]`, and so on. Nothing at run time checks the pairing,
+    /// so calling a reader or writer for a type the function was not
+    /// registered with reads or writes memory of the wrong layout.
     pub fn exec(mut self, exec: Exec) -> Self {
         self.exec = Some(exec);
         self
@@ -391,8 +402,8 @@ unsafe extern "C" fn exec_trampoline(
 ///
 /// # Safety
 ///
-/// `err` is NULL or a slot DuckDB handed to a callback.
-unsafe fn report(err: *mut duckdb_v2_error_info_handle, message: &str) {
+/// `err` is NULL or a slot DuckDB handed to a callback or to the entrypoint.
+pub unsafe fn report(err: *mut duckdb_v2_error_info_handle, message: &str) {
     if err.is_null() {
         return;
     }
@@ -414,6 +425,22 @@ unsafe fn report(err: *mut duckdb_v2_error_info_handle, message: &str) {
 
 /// One invocation of a scalar function: its input rows and its result vector.
 /// Valid only inside the exec callback.
+///
+/// # The type contract
+///
+/// The readers and writers here trust that the column or result they touch
+/// has the type the function was registered with (see
+/// [`ScalarFunction::exec`]): `varchar_arg(i)` is only for a VARCHAR
+/// parameter, `write_float_lists` only for a `FLOAT[]` result,
+/// `write_bools` for BOOLEAN, `write_bigints` for BIGINT,
+/// `write_varchar_constant` for VARCHAR, and `struct_child` for a STRUCT
+/// whose field `i` has the type the [`Child`] writer assumes. Nothing checks
+/// this at run time, so a mismatch is undefined behaviour rather than an
+/// error.
+///
+/// The writers also assume the result vector is FLAT, which is what DuckDB's
+/// expression executor hands a scalar function. [`Call::new`] checks that once
+/// per call and refuses anything else with an error.
 pub struct Call {
     info: duckdb_v2_scalar_function_exec_info_handle,
     rows: usize,
@@ -433,6 +460,13 @@ impl Call {
                 info, &mut rows
             ))?;
             v2!(duckdb_v2_scalar_function_exec_get_result(info, &mut result))?;
+            let mut kind: DUCKDB_V2_VECTOR_TYPE = DUCKDB_V2_VECTOR_TYPE_DUCKDB_V2_VECTOR_TYPE_OTHER;
+            v2!(duckdb_v2_vector_get_vector_type(result, &mut kind))?;
+            if kind != DUCKDB_V2_VECTOR_TYPE_DUCKDB_V2_VECTOR_TYPE_FLAT {
+                return Err(format!(
+                    "subtoken expected DuckDB to hand it a FLAT result vector, and got vector type {kind}"
+                ));
+            }
         }
         Ok(Self {
             info,
