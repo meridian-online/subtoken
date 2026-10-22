@@ -247,8 +247,9 @@ def built_platforms(excluded: str, opted_in: str) -> set[str] | None:
     This mirrors `should_run` in extension-ci-tools'
     `scripts/modify_distribution_matrix.py`: an arch is built when it is not
     excluded, and is either not opt-in or named in the opt-in list.
-    `reduced_ci_mode` is left at the reusable workflow's default of `auto`,
-    which that script maps to off.
+    It assumes `reduced_ci_mode: 'disabled'`, which `rehearsal_problems`
+    requires of the build job: the default, `auto`, drops arm64 builds on pull
+    requests, and the set below would then name artifacts nobody uploaded.
     """
     entries = matrix_entries()
     if entries is None:
@@ -390,6 +391,16 @@ def rehearsal_problems(descriptor: dict, workflow: dict | None) -> list[str]:
         problems.append(
             f"{REHEARSAL.name} calls the reusable workflow at {pinned!r} but passes "
             f"ci_tools_version {inputs.get('ci_tools_version')!r}"
+        )
+
+    # `built_platforms` assumes every platform is built. The reusable
+    # workflow's default, `auto`, skips arm64 on pull requests, so the
+    # inspection job's downloads would fail on artifacts that were never made.
+    reduced = str(inputs.get("reduced_ci_mode", "auto"))
+    if reduced != "disabled":
+        problems.append(
+            f"{REHEARSAL.name} runs the build job with reduced_ci_mode {reduced!r}; it has to "
+            f"be 'disabled', or a pull request skips platforms the inspection job downloads"
         )
 
     declared = str((workflow.get("env") or {}).get("DUCKDB_VERSION", ""))
@@ -639,6 +650,7 @@ docs:
                     "extra_toolchains": "rust;python3",
                     "ci_tools_version": "v2.0-cyanoptera",
                     "duckdb_version": "v2.0.0",
+                    "reduced_ci_mode": "disabled",
                 },
             },
             "no-network": inspection,
@@ -655,6 +667,7 @@ docs:
         ("ci_tools_version", "v2.0.0", "ci_tools_version"),
         ("duckdb_version", "v2.0.1", "DUCKDB_VERSION"),
         ("opt_in_archs", "windows_arm64", "opt_in_platforms"),
+        ("reduced_ci_mode", "auto", "reduced_ci_mode"),
     ):
         broken = copy.deepcopy(agreeing)
         broken["jobs"]["duckdb-stable-build"]["with"][field] = value
@@ -662,6 +675,13 @@ docs:
             f"a rehearsal that changed {field} is caught",
             any(needle in problem for problem in rehearsal_problems(entry, broken)),
         )
+
+    defaulted = copy.deepcopy(agreeing)
+    del defaulted["jobs"]["duckdb-stable-build"]["with"]["reduced_ci_mode"]
+    expect(
+        "a rehearsal that leaves reduced_ci_mode at its default is caught",
+        any("reduced_ci_mode 'auto'" in problem for problem in rehearsal_problems(entry, defaulted)),
+    )
 
     missing = {"env": {}, "jobs": {"something-else": {}}}
     expect(

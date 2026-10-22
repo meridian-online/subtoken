@@ -36,10 +36,13 @@ extension:
 
 repo:
   github: meridian-online/subtoken
-  ref: 3bf95680e23ba6ad23951023bd65432f53877485
+  ref: a0aa1d802ab3a6fdea67b4ec5453f6e916863bc0
   # The registry builds `ref_next` against the next DuckDB release before it
   # ships; without it that build skips and passes having built nothing.
-  ref_next: 3bf95680e23ba6ad23951023bd65432f53877485
+  ref_next: a0aa1d802ab3a6fdea67b4ec5453f6e916863bc0
+  # DuckDB 1.5.6 builds from `variegata`: the last commit that targeted the v1
+  # C API. A build from `ref` would not load on 1.5.
+  variegata: 3bf95680e23ba6ad23951023bd65432f53877485
 
 docs:
   hello_world: |
