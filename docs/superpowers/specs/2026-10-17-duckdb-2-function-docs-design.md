@@ -142,7 +142,7 @@ The text lives in one `const` table in `lib.rs`, next to the functions. Registra
 
 | function | parameters | description | example | category |
 |---|---|---|---|---|
-| `subtoken_embed` | `text` | Returns a unit-length FLOAT[] vector for text from the model bundled in the extension, with no network call; NULL gives NULL. | `subtoken_embed('a quiet street near the river')` | `embedding` |
+| `subtoken_embed` | `text` | Returns a unit-length FLOAT[] vector for text from the model bundled in the extension, with no network call; text with no in-vocabulary tokens (including '') gives the all-zero vector, and NULL gives NULL. | `subtoken_embed('a quiet street near the river')` | `embedding` |
 | `subtoken_is_truncated` | `text` | Returns true when subtoken_embed(text) had to drop part of text to fit the model's input limits, so its vector does not reflect all of it. | `subtoken_is_truncated(repeat('word ', 2000))` | `embedding` |
 | `subtoken_version` | — | Returns one line naming this build, the bundled model, its revision and the vector width. | `subtoken_version()` | `metadata` |
 | `subtoken_model_id` | — | Returns the bundled model's full key; store it beside a vector column so a later session can refuse to compare vectors from a different model. | `subtoken_model_id()` | `metadata` |

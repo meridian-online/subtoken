@@ -17,7 +17,7 @@
 - The cdylib's dependencies are `subtoken-core` and `subtoken-duckdb-sys` only. `duckdb` and `libduckdb-sys` leave the workspace. No new runtime crate is added.
 - The vendored headers are byte-identical to DuckDB's `v2.0.0` tag. `bindings.rs` is only ever written by `scripts/regenerate_v2_bindings.sh`.
 - Every `unsafe` block carries a `// SAFETY:` comment. Every `extern "C"` function body runs inside `std::panic::catch_unwind`.
-- Behaviour does not change. `test/sql/01`–`11` pass unchanged on a 2.0 CLI.
+- Behaviour does not change. The existing assertions in `test/sql/01`–`11` pass unchanged on a 2.0 CLI; no test changes except the new test files.
 - The repo is public: no private planning ids in files, commits or pull requests.
 - One cargo build at a time on the Mac, and no parallel implementers.
 - Before each commit, run the quick checks (`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`) and the tests the change touches. CI runs the full `make check`. After each commit, wait for `roborev wait <sha>` and fold its findings into the task's fix round.
@@ -30,7 +30,7 @@ These inputs are implied by the spec but no task's main tests exercise them. Eac
 1. **A VARCHAR column from a persistent table, stored FSST-compressed.** `subtoken_embed` returns the same vectors as it does for the same strings in memory. Task 4 adds `test/sql/12_a_compressed_column_read_back_from_disk.sql`.
 2. **Strings exactly 12 and 13 bytes long**, the inline/pointer boundary, both when read and when written. They round-trip unchanged. Task 3 adds unit tests, and Task 4's `subtoken_version()`/`subtoken_model_id()` writes are long strings checked by the existing tests 02 and 11.
 3. **Multi-byte UTF-8 input** (Korean, emoji) through the new reader. Vectors are identical to the v1 build's. Existing tests 06 and 10 cover it, and Task 4 must not change them.
-4. **A constant argument**, `subtoken_embed('x')` over `range(3000)`, meaning a CONSTANT vector across chunks. Each row gets the same vector, and nothing reads past the selection. Task 4 adds an assertion to test 08.
+4. **A CONSTANT input vector across chunks.** A literal argument such as `subtoken_embed('x')` is folded by the optimizer and never reaches the reader as a CONSTANT vector, so the test uses a checkpointed column of 3,000 copies of one string, which storage keeps as a constant segment and hands back as CONSTANT vectors. Each row gets the same vector, and nothing reads past the selection. Task 4 adds it to test 12.
 5. **A panic inside `subtoken-core`** reached from SQL. It must come back as a query error, not a crash. Task 3 adds a unit test that `guard` turns a panic into `Err`. A real panic path is not reachable from SQL today.
 
 ---
@@ -159,7 +159,6 @@ This task switches the entrypoint, ports the seven functions and drops duckdb-rs
 - Modify: `scripts/check_artifact_version.py` (the docstring and fixtures that say v1.2.0; `EXPECTED_ABI` becomes `C_STRUCT_UNSTABLE`, and the self-test's unstable-ABI case is inverted so a `C_STRUCT` footer is the one caught)
 - Modify: `scripts/check_no_network_deps.py` (drop the libduckdb-sys build-dependency note)
 - Modify: `scripts/mutation_check.py` (re-anchor every `file=GLUE` mutation onto the new code, keeping its name and intent)
-- Modify: `test/sql/08_a_scan_wider_than_one_chunk.sql` (add the constant-argument assertion)
 - Create: `test/sql/12_a_compressed_column_read_back_from_disk.sql`
 
 **Interfaces:**
@@ -171,16 +170,17 @@ This task switches the entrypoint, ports the seven functions and drops duckdb-rs
     1. `ATTACH 'fsst.duckdb' AS disk;` then `SET force_compression='fsst';`
     2. Create `disk.t` from 5,000 rows of `'value ' || (i % 300)`, with NULLs every 97th row, then `CHECKPOINT disk;`
     3. `must('the column is stored FSST', (SELECT count(*) FROM pragma_storage_info('disk.t') WHERE compression = 'FSST') > 0)`
-    4. `must('vectors from disk match vectors from memory', ...)`: join `disk.t` embedded against the same values embedded in memory and compare with `list_cosine_similarity(a, b) > 0.999999`, which also asserts NULL rows stay NULL.
+    4. `must('vectors from disk match vectors from memory', ...)`: join `disk.t` embedded against the same non-NULL values embedded in memory, and count rows where `disk_vector IS DISTINCT FROM memory_vector`; it must be 0 (the exact comparison test 08 uses).
+    5. `must('the stored column has NULL rows', (SELECT count(*) FROM disk.t WHERE s IS NULL) > 0)` and `must('NULL rows read from disk stay NULL', (SELECT count(*) FROM disk.t WHERE s IS NULL AND subtoken_embed(s) IS NOT NULL) = 0)`. The join in 4 drops NULL rows, so they need their own assertion.
+    6. A second table `disk.c` of 3,000 copies of one string, checkpointed. `must('the column is stored as a constant segment', ...)` on `pragma_storage_info('disk.c')` (compression `Constant`, or whatever 2.0 calls it), and `must('a CONSTANT input gives every row the same vector', (SELECT count(DISTINCT subtoken_embed(s)) FROM disk.c) = 1 AND (SELECT count(*) FROM disk.c WHERE subtoken_embed(s) IS DISTINCT FROM subtoken_embed('<the string>')) = 0)`.
     If `pragma_storage_info`'s column names differ on 2.0, use the 2.0 names. The assertion must still fail when FSST is absent.
-  - In `08`: `must('a constant argument gives every row the same vector', (SELECT count(DISTINCT subtoken_embed('a constant')) FROM range(3000)) = 1)`.
-- [ ] **Step 2:** On Task 1's v1 build, run `python3 scripts/run_sql_tests.py --extension build/subtoken.duckdb_extension`. Expected: 12 and the new 08 assertion pass on v1, because they pin behaviour that must survive the port. If 12 fails on v1, investigate before porting.
+- [ ] **Step 2:** On Task 1's v1 build, run `python3 scripts/run_sql_tests.py --extension build/subtoken.duckdb_extension`. Expected: 12 passes on v1, because they pin behaviour that must survive the port. If 12 fails on v1, investigate before porting.
 - [ ] **Step 3:** Port. Each of `Embed`, `IsTruncated`, `Version`, `ModelId`, `Models`, `CacheStats` and `CacheClear` becomes an `Exec` fn of the same name in snake case (`embed`, `is_truncated`, …), with its body logic unchanged and its I/O going through `Call`.
   - `register_all` registers them with the parameter name `text` on the two one-argument functions.
   - The STRUCT return types are built from `MODEL_FIELDS` and `STATS_FIELDS` into `STRUCT(model VARCHAR, …)` text.
   - `.volatile()` goes on `subtoken_cache_stats` and `subtoken_cache_clear`.
   - The entrypoint runs, under `guard`: `init`, then `Registrar::from_input`, then `register_all`. On `Err`, set `input.err`'s code to `DUCKDB_V2_ERROR_INPUT_INVALID`, set its text, and return.
-- [ ] **Step 4:** Run `make check` (a release build, several minutes). Expected: green, with `test/sql/01`–`12` passing and no test other than 08 changed. Confirm `cargo tree -p subtoken-duckdb --edges normal` lists only `subtoken-core` and `subtoken-duckdb-sys` at depth 1.
+- [ ] **Step 4:** Run `make check` (a release build, several minutes). Expected: green, with `test/sql/01`–`12` passing and no existing test changed. Confirm `cargo tree -p subtoken-duckdb --edges normal` lists only `subtoken-core` and `subtoken-duckdb-sys` at depth 1.
 - [ ] **Step 5:** Run `python3 scripts/mutation_check.py --check-anchors`. Expected: every anchor resolves. Then run the re-anchored glue mutations only (`scripts/mutation_check.py --list` shows the names; each run rebuilds, about a minute each, so expect a long sequential run): `a_null_row_is_written_without_its_validity_bit`, `every_row_reads_the_child_vector_from_offset_zero`, `the_list_offset_is_carried_across_chunks`, `cache_stats_is_folded_to_a_constant_because_it_is_no_longer_volatile`, `sql_null_stops_propagating_and_becomes_a_zero_vector`, `embed_returns_a_list_of_doubles_instead_of_floats`, `an_eighth_function_is_registered`, `a_similarity_function_is_registered`, plus any other `file=GLUE` mutation. Expected: each one reddens its named test.
 - [ ] **Step 6:** Run `make community-check` (both recipes, a second release build). Expected: green, and the footer reads `C_STRUCT_UNSTABLE` / `v2.0.0`.
 - [ ] **Step 7:** Run the quick checks, then commit ("Register subtoken's functions through DuckDB 2.0's v2 C API").
