@@ -23,7 +23,8 @@ jobs:
   # header bump without regeneration goes red.
   bindings:
     name: v2 bindings
-    runs-on: ubuntu-latest
+    # Pinned, with the libclang below, because both shape the generated text.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +34,7 @@ jobs:
           components: rustfmt
 
       - name: Install libclang
-        run: sudo apt-get update && sudo apt-get install -y libclang-dev
+        run: sudo apt-get update && sudo apt-get install -y libclang-18-dev
 
       # The version here is the one BINDGEN_VERSION pins in the script.
       - name: Cache bindgen

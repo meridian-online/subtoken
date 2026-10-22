@@ -11,12 +11,16 @@
 # libclang: bindgen loads it at run time. On macOS it falls back to Xcode's
 # Command Line Tools (this script sets LIBCLANG_PATH there if unset). On Linux
 # (ubuntu-latest) the runner image ships LLVM; if bindgen cannot find
-# libclang, `sudo apt-get install -y libclang-dev` provides it.
+# libclang, `sudo apt-get install -y $LIBCLANG_PACKAGE` provides it.
 #
 # Usage: scripts/regenerate_v2_bindings.sh [--check]
 set -euo pipefail
 
 BINDGEN_VERSION="0.73.2"
+# The libclang the CI job installs (ubuntu-24.04: libclang-18-dev). Kept here
+# beside the bindgen pin so both inputs to the output are named in one place;
+# ci.yml must match.
+LIBCLANG_PACKAGE="libclang-18-dev"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 crate="$root/crates/subtoken-duckdb-sys"

@@ -29,11 +29,16 @@ static TABLE: OnceLock<duckdb_ext_api_v2> = OnceLock::new();
 /// Fetches the function-pointer table with `get_api` and stores it. Returns
 /// `false` when `get_api` returns NULL, which means the load already failed.
 ///
+/// The extension is valid only against the exact DuckDB release its headers
+/// were vendored from (see `vendor/SOURCE.txt`). A new DuckDB release means new
+/// headers and regenerated bindings.
+///
 /// # Safety
 ///
 /// `input` must be the valid `duckdb_v2_extension_input` DuckDB passed to the
 /// extension's entrypoint, and the table `get_api` returns must be a
-/// `duckdb_ext_api_v2` laid out as in the vendored header.
+/// `duckdb_ext_api_v2` laid out as in the vendored header. The table carries no
+/// size field, so nothing here can check that; DuckDB's loader guarantees it.
 pub unsafe fn init(input: *mut duckdb_v2_extension_input) -> bool {
     // SAFETY: the caller guarantees `input` is valid.
     let input = unsafe { &*input };
@@ -47,7 +52,11 @@ pub unsafe fn init(input: *mut duckdb_v2_extension_input) -> bool {
         return false;
     }
     // SAFETY: a non-NULL result points at a table DuckDB keeps alive for the
-    // call; we copy it, so the copy outlives that.
+    // call; we copy it, so the copy outlives that. Reading
+    // `size_of::<duckdb_ext_api_v2>()` bytes is in bounds because the
+    // extension's footer is C_STRUCT_UNSTABLE with DuckDB version v2.0.0, and
+    // DuckDB refuses to load such an extension on any other version, so the only
+    // DuckDB that calls this entrypoint is the one these headers came from.
     let table = unsafe { *(table as *const duckdb_ext_api_v2) };
     let _ = TABLE.set(table);
     true
@@ -62,4 +71,75 @@ pub fn api() -> &'static duckdb_ext_api_v2 {
     TABLE
         .get()
         .expect("subtoken_duckdb_sys::init was not called")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ptr;
+
+    unsafe extern "C" fn get_api_null(
+        _extension: duckdb_v2_extension_handle,
+        _version: *const core::ffi::c_char,
+    ) -> *const core::ffi::c_void {
+        ptr::null()
+    }
+
+    unsafe extern "C" fn stub_arena_allocate(
+        _arena: duckdb_v2_arena_handle,
+        _byte_len: idx_t,
+        _out_ptr: *mut *mut u8,
+        _err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR {
+        // SAFETY: the stub is only compared by address, never called.
+        unsafe { core::mem::zeroed() }
+    }
+
+    static mut STUB_TABLE: Option<duckdb_ext_api_v2> = None;
+
+    unsafe extern "C" fn get_api_table(
+        _extension: duckdb_v2_extension_handle,
+        version: *const core::ffi::c_char,
+    ) -> *const core::ffi::c_void {
+        // SAFETY: `init` passes a NUL-terminated string.
+        assert_eq!(unsafe { CStr::from_ptr(version) }, API_VERSION);
+        // SAFETY: STUB_TABLE is set before `init` runs and not written after.
+        let table = unsafe { (*ptr::addr_of!(STUB_TABLE)).as_ref().unwrap() };
+        table as *const duckdb_ext_api_v2 as *const core::ffi::c_void
+    }
+
+    fn input(get_api: duckdb_v2_extension_get_api_fn) -> duckdb_v2_extension_input {
+        duckdb_v2_extension_input {
+            get_api,
+            extension: ptr::null_mut(),
+            context: ptr::null_mut(),
+            err: ptr::null_mut(),
+        }
+    }
+
+    // One test: TABLE is a process-wide OnceLock, so the cases run in order.
+    #[test]
+    fn init_reports_null_then_stores_the_table() {
+        let mut no_fn = input(None);
+        // SAFETY: `no_fn` is a valid, live input.
+        assert!(!unsafe { init(&mut no_fn) });
+        let mut null = input(Some(get_api_null));
+        // SAFETY: `null` is a valid, live input.
+        assert!(!unsafe { init(&mut null) });
+        assert!(TABLE.get().is_none());
+
+        // SAFETY: an all-zero table is valid (every field is a nullable fn pointer).
+        let mut table: duckdb_ext_api_v2 = unsafe { core::mem::zeroed() };
+        table.duckdb_v2_arena_allocate = Some(stub_arena_allocate);
+        // SAFETY: nothing else touches STUB_TABLE.
+        unsafe { *ptr::addr_of_mut!(STUB_TABLE) = Some(table) };
+        let mut good = input(Some(get_api_table));
+        // SAFETY: `good` is valid and its get_api returns a full table.
+        assert!(unsafe { init(&mut good) });
+        let got = api().duckdb_v2_arena_allocate.expect("pointer stored");
+        assert_eq!(
+            got as *const () as usize,
+            stub_arena_allocate as *const () as usize
+        );
+    }
 }
