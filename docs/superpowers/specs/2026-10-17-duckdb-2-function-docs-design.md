@@ -1,12 +1,12 @@
 # subtoken's functions describe themselves in duckdb_functions() on DuckDB 2.0
 
-Written 2026-10-17 against DuckDB's `v2.0-cyanoptera` branch at `f8f3f4dcd95` (2026-10-16), ahead of DuckDB 2.0.0 (due 2026-10-21). No build was run while writing it. Where this document cites DuckDB source, the path is on that commit.
+Written 2026-10-17 against DuckDB's `v2.0-cyanoptera` branch at `f8f3f4dcd95` (2026-10-16), ahead of DuckDB 2.0.0 (due 2026-10-21). No build was run while writing it. Where this document cites DuckDB source, the path is on that commit. Amended on 2026-10-22 against the `v2.0.0` tag (`d54cbbe3df1`, 2026-10-21), which shipped the whole v2 C API as unstable: see *Loading*.
 
 ## Intent
 
 An agent connected to a DuckDB 2.0 database with subtoken loaded should be able to learn the whole extension from `duckdb_functions()` alone. For each of the seven functions that means the real parameter names, a one-sentence description, a runnable example and a category. The community registry's DuckDB 2.0 build should carry the same. subtoken promised this publicly on its GitHub issue 11 on 2026-10-12. finetype made the same promise on its issue 141.
 
-Today none of that is possible. DuckDB 1.5's C API has no setter for a description, an example or a category. `COMMENT ON` is refused for functions in the system catalog. On DuckDB 2.0, a function registered through the v1 C API gets the synthetic parameter names `col0`, `col1` and so on (`src/include/duckdb/main/capi/capi_function_signature.hpp:28-33`). DuckDB 2.0's v2 C API adds all four fields: `duckdb_v2_function_signature_add_parameter` (`api_spec/v2/function/signature.yaml:48-89`) and the setters in `function/docs.yaml:22-98`. All of them are marked stable for v2.0.0.
+Today none of that is possible. DuckDB 1.5's C API has no setter for a description, an example or a category. `COMMENT ON` is refused for functions in the system catalog. On DuckDB 2.0, a function registered through the v1 C API gets the synthetic parameter names `col0`, `col1` and so on (`src/include/duckdb/main/capi/capi_function_signature.hpp:28-33`). DuckDB 2.0's v2 C API adds all four fields: `duckdb_v2_function_signature_add_parameter` (`api_spec/v2/function/signature.yaml:48-89`) and the setters in `function/docs.yaml:22-98`. At `f8f3f4dcd95` they were marked stable. DuckDB then marked the whole v2 C API unstable (duckdb #27410, 2026-10-16), and v2.0.0 shipped that way, so a v2 extension is pinned to the exact DuckDB version it was built for (see *Loading*).
 
 subtoken goes first because it registers only scalar functions, which makes it the smallest real test of the v2 registration path. finetype follows on the same pattern. The section *What finetype takes from this* below says which parts transfer to finetype and which parts it has to prove itself.
 
@@ -40,9 +40,9 @@ These would make the work a failure even if every field showed up in `duckdb_fun
 
 ## Constraints
 
-- DuckDB 2.0.0 is not released on 2026-10-17. Hugh ruled on 2026-10-15 that this work follows the release rather than racing it. The build starts once DuckDB v2.0.0 is tagged and its CLI binaries are published. The plan's *Before the build starts* section lists what to check.
+- Hugh ruled on 2026-10-15 that this work follows DuckDB 2.0.0's release rather than racing it. v2.0.0 was tagged on 2026-10-21 with its CLI binaries published, and Hugh ruled on 2026-10-22 that the build starts on it. The plan's *Before the build starts* section records what was checked.
 - One cargo build at a time on Hugh's Mac, and no parallel implementers.
-- The repo is public. Specs, plans, commits and pull requests use plain words and no private planning ids. `scripts/check-public-hygiene.sh` enforces this.
+- The repo is public. Specs, plans, commits and pull requests use plain words and no private planning ids. Instruction and review keep this; there is no script for it.
 - Every existing gate in `make check` stays in force and is updated rather than switched off. That includes the mutation table in `scripts/mutation_check.py`, whose anchors point into the code being rewritten.
 
 ## Bindings route
@@ -57,12 +57,15 @@ The issue framed the choice as waiting for a libduckdb-sys built against the 2.0
 
 Waiting has no end date: nothing on duckdb-rs's branches or open pull requests adds a v2 loadable-extension API. The issue-11 commitment is for 2.0. So the route is our own bindings.
 
+Update, 2026-10-22: duckdb-rs merged loadable-extension support for duckdb-neo on 2026-10-20 (duckdb-rs PR 910), pinned to DuckDB v2.0.0. It is still unpublished and experimental, its rebuild for each DuckDB release waits on duckdb-rs moving its pin, and a panic during load invalidates the database. Hugh ruled the same day to keep our own bindings; moving to duckdb-neo later stays a separate change.
+
 How the bindings are kept honest:
 
 - Both headers, `src/include/duckdb_v2.h` and `src/include/duckdb_extension_v2.h`, are vendored byte for byte from DuckDB's `v2.0.0` tag under `crates/subtoken-duckdb-sys/vendor/`, with a `SOURCE.txt` naming the tag and commit.
 - `scripts/regenerate_v2_bindings.sh` runs a pinned `bindgen` CLI over them and writes `crates/subtoken-duckdb-sys/src/bindings.rs`. The output is committed, so no build needs libclang. `--check` regenerates into a temporary file and fails on any difference. A CI job runs `--check` on Linux, so a hand edit to the bindings, or a header bump without regeneration, goes red.
 - bindgen is a tool run by the script, not a Cargo dependency, so it adds nothing to the dependency tree. bindgen-cli is BSD-3-Clause, and the script installs it with `cargo install --locked` at a pinned version.
-- The table is requested with `get_api(extension, "v2.0.0")`. The table layout for that version is fixed by DuckDB, so the binary loads into 2.0.0 and every later 2.x that still serves the v2.0.0 table. That is the same promise the v1.2.0 floor makes today.
+- The header refuses to compile unless `DUCKDB_V2_API_ALLOW_UNSTABLE=1` is defined, and every table entry sits behind that define, so the script passes it to bindgen.
+- The table is requested with `get_api(extension, "v2.0.0")`. For an unstable build the loader reads only the major version, and the table is only guaranteed to match the DuckDB version the headers came from. Each DuckDB release therefore means vendoring its headers, regenerating the bindings when they differ, and rebuilding (see *Loading*).
 
 ## Design
 
@@ -81,9 +84,10 @@ How the bindings are kept honest:
   - Otherwise it registers the seven functions through `input.extension`, using a factory taken from `input.context` (`duckdb_v2_context_get_factory`).
   - Any failure sets `input.err`'s code and text and returns. The error handle is borrowed and is never destroyed.
 - The whole body runs inside `std::panic::catch_unwind`, as does every exec callback. A panic is reported as an error, because unwinding across `extern "C"` aborts the process.
-- The metadata footer keeps the ABI type `C_STRUCT`. Its DuckDB-version field changes from `v1.2.0` to `v2.0.0`, which is how DuckDB 2.0 tells a v2 extension from a v1 one: major version 2 (`src/main/extension/extension_load.cpp:27-37, 369-382, 830-846`). `C_STRUCT_UNSTABLE` is not used, because it pins a binary to one exact DuckDB version.
-  - `MIN_DUCKDB_VERSION` in `lib.rs` and `TARGET_DUCKDB_VERSION` in the Makefile both become `v2.0.0`.
-  - `scripts/check_artifact_version.py` keeps checking that the two agree and that the ABI is `C_STRUCT`.
+- The metadata footer's ABI type becomes `C_STRUCT_UNSTABLE`, and its DuckDB-version field becomes `v2.0.0`, the exact DuckDB version the binary was built for. On v2.0.0 that is the only way a v2 extension loads. The loader refuses a `C_STRUCT` footer with a v2 C API version, because "the V2 C API has no stable surface yet" (v2.0.0 `src/main/extension.cpp:77-83`). A `C_STRUCT_UNSTABLE` footer always selects the v2 entrypoint, and the loader refuses it on any DuckDB version other than the one named (`extension.cpp:55-63`, `src/main/extension/extension_load.cpp:27-37`).
+  - The consequence, which Hugh accepted on 2026-10-22: the binary loads only on DuckDB 2.0.0. Each DuckDB release, starting with 2.0.1 (due 2026-11-18), needs its headers vendored, the bindings regenerated if the headers changed, and a rebuild. Because the footer's version and the vendored headers are both fixed in the repo, each release is a commit here (new headers, regenerated bindings, `TARGET_DUCKDB_VERSION` and `MIN_DUCKDB_VERSION` moved) followed by a registry entry change, not just a registry rebuild.
+  - `MIN_DUCKDB_VERSION` in `lib.rs` and `TARGET_DUCKDB_VERSION` in the Makefile both become `v2.0.0`. The Makefile passes `--abi-type C_STRUCT_UNSTABLE` to the metadata script, and sets `USE_UNSTABLE_C_API=1` for the registry recipes.
+  - `scripts/check_artifact_version.py` keeps checking that the two versions agree, and now that the ABI is `C_STRUCT_UNSTABLE`.
 
 ### Registration
 
@@ -99,7 +103,7 @@ ScalarFunction::new("subtoken_embed")
     .register(&ext, &factory)?;
 ```
 
-It runs the v2 call sequence:
+Every v2.0.0 call returns a `DUCKDB_V2_ERROR` and takes an error slot; the builder turns a failure into `Err` with the slot's text. Names and text are passed as `duckdb_v2_str` (pointer and length), so no `CString` is needed. It runs the v2 call sequence:
 
 1. `scalar_function_create`
 2. `set_name`
@@ -197,6 +201,8 @@ The registry pull request goes to duckdb's repository, and the note for issue 11
 5. **Example-running lives in `check_documented_surface.py`**, not a new script, because that script already loads the artifact and reads the catalog.
 6. **Bindings are regenerated by a script and checked in CI**, not generated in a `build.rs`, so no build needs libclang.
 
+Hugh's own rulings on 2026-10-22: the build starts on v2.0.0 with the unstable ABI and a rebuild per DuckDB release, and subtoken keeps its own bindings rather than moving to duckdb-neo.
+
 ## What finetype takes from this
 
 finetype has to keep the same public promise (its issue 141), and it follows this pattern when it moves to DuckDB 2.0.
@@ -204,7 +210,7 @@ finetype has to keep the same public promise (its issue 141), and it follows thi
 **Transfers as it is:**
 
 - **The bindings route.** Vendored v2.0.0 headers, bindings generated by a script and committed, `--check` in CI, and no `duckdb`/`libduckdb-sys` in the extension crate. finetype copies `subtoken-duckdb-sys` and the regeneration script. Its other crates that link DuckDB as a library through duckdb-rs, `finetype-eval` and `finetype-train`, are separate binaries and are not affected.
-- **Loading.** The entrypoint, which for finetype is `<extension name>_init_c_api_v2` under its new name; the `get_api(…, "v2.0.0")` handshake; `catch_unwind` around the entrypoint and every callback; and a footer of `C_STRUCT` with `v2.0.0`.
+- **Loading.** The entrypoint, which for finetype is `<extension name>_init_c_api_v2` under its new name; the `get_api(…, "v2.0.0")` handshake; `catch_unwind` around the entrypoint and every callback; a footer of `C_STRUCT_UNSTABLE` with the exact DuckDB version; and a rebuild for each DuckDB release.
 - **Scalar registration.** The builder, the parameter and docs calls, the bare-expression example form, and categories as short lowercase words. This covers `ft_version`, `ft_infer`, `ft_validate_text`, `ft_cast` and `ft_unpack`, under whatever names the rename gives them.
 - **The vector helpers** for VARCHAR in, BOOLEAN or BIGINT out, LIST and STRUCT out, and string writes through the arena.
 - **The two checks.** A SQL test asserting the four fields and no `colN` for every registered function, and an example-running pass that holds the catalog to the docs table.
