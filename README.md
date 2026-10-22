@@ -14,6 +14,18 @@ WHERE industry = 'manufacturing'
 LIMIT 100;
 ```
 
+## Requirements
+
+The extension needs DuckDB 2.0.0 exactly. DuckDB 2.0 ships its v2 C API as unstable, so a build loads only on the DuckDB release it was built for; each DuckDB release gets a rebuild. If you are on DuckDB 1.5, `INSTALL subtoken FROM community` fetches the earlier build, which stays pinned to the last commit that targeted the v1 API.
+
+`duckdb_functions()` describes each function, with real parameter names, a description, a runnable example and a category:
+
+```sql
+SELECT function_name, parameters, description, examples, categories
+FROM duckdb_functions()
+WHERE function_name LIKE 'subtoken_%';
+```
+
 ## Why this exists
 
 Every other route to an embedding inside DuckDB is either a transformer forward pass or a call to a hosted provider. Over a large text column the first is slow enough that people leave SQL to do it, and the second is an invoice you find out about afterwards. A static embedding is neither: it is a token lookup and a mean, so it is bounded, local, and free at the margin.
@@ -181,7 +193,7 @@ What it costs is adaptivity: the values kept are the ones seen first in the sess
 
 ## Building it
 
-Needs a Rust toolchain, Python 3 for the packaging and test scripts, and the `duckdb` CLI for the SQL tests. `make check` also needs PyYAML, because it reads `description.yml` with a parser rather than a regex.
+Needs a Rust toolchain, Python 3 for the packaging and test scripts, and the `duckdb` CLI (v2.0.0) for the SQL tests. `make check` also needs PyYAML, because it reads `description.yml` with a parser rather than a regex.
 
 ```
 make check            # formatting, clippy, Rust tests, the artifact, the SQL tests, the registry entry
@@ -191,6 +203,21 @@ make mutation-check   # break the code on purpose and require the tests to notic
 ```
 
 `make check` and `make community-check` are what CI runs. `make mutation-check` is not, because each of its SQL mutations rebuilds the release binary; it applies a table of deliberate defects one at a time and fails unless the test named against each one reddens, which is the difference between a suite that is green and a suite that is watching. CI does run `scripts/mutation_check.py --check-anchors`, which applies no mutation and asserts only that each one still names a line that exists.
+
+subtoken carries its own bindings to the v2 C API rather than depending on duckdb-rs: `subtoken-duckdb-sys` vendors DuckDB v2.0.0's headers, `scripts/regenerate_v2_bindings.sh` generates the Rust bindings from them, and CI fails if the checked-in bindings drift. The artifact's footer is `C_STRUCT_UNSTABLE` pinned to `v2.0.0`. The text `duckdb_functions()` shows lives in the `DOCS` table in `crates/subtoken-duckdb/src/lib.rs`; `scripts/check_documented_surface.py` and SQL test 13 hold it to the registered catalog.
+
+### Moving to a new DuckDB release
+
+The extension loads on exactly one DuckDB release, so each release is a small checklist, done in one commit:
+
+1. Re-vendor `duckdb_v2.h` and `duckdb_extension_v2.h` (from `src/include/`) and `LICENSE` at the new tag into `crates/subtoken-duckdb-sys/vendor/`, byte for byte, with `git show <tag>:<path>`, and update `vendor/SOURCE.txt` (tag, commit, date). A unit test fails if its tag disagrees with `API_VERSION`.
+2. Run `scripts/regenerate_v2_bindings.sh` and commit the new `bindings.rs`.
+3. Set `API_VERSION` in `crates/subtoken-duckdb-sys/src/lib.rs`.
+4. Set `MIN_DUCKDB_VERSION` in `crates/subtoken-duckdb/src/lib.rs`.
+5. Set `TARGET_DUCKDB_VERSION` in the `Makefile`.
+6. Set `DUCKDB_VERSION` in `.github/workflows/ci.yml`, and both `DUCKDB_VERSION` and `duckdb_version` in `.github/workflows/MainDistributionPipeline.yml`. Then `grep -rn 'v2\.0\.0' --exclude-dir=target --exclude-dir=extension-ci-tools .` to catch any other copy.
+7. Update the "DuckDB 2.0.0 exactly" text in `README.md` and `description.yml`.
+8. After the change is merged, change the registry entry in `duckdb/community-extensions`.
 
 `make community-check` is the local form of the registry's own build. It needs `git submodule update --init --recursive` for `extension-ci-tools`, and it creates `configure/`, which is gitignored. `configure/extension_version.txt` must never be tracked: the upstream recipe writes that file only when it is absent, so a tracked copy would never be refreshed and would stamp a stale version onto every published artifact.
 

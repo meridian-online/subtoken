@@ -2,7 +2,7 @@
 """Run every `test/sql/*.sql` file against a real DuckDB with the extension loaded.
 
 Each file is executed by the `duckdb` CLI in its own process, preceded by a
-prelude that points `extension_directory` at an empty temporary directory,
+prelude that points `extension_directories` at an empty temporary directory,
 snapshots the function catalog, loads the packaged artifact, and defines the
 `must(label, condition)` macro the assertions use. `must` raises a DuckDB error
 when its condition is anything other than TRUE — NULL fails too, so a mistyped
@@ -35,7 +35,7 @@ import tempfile
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 PRELUDE = """\
-SET extension_directory='{extension_directory}';
+SET extension_directories=['{extension_directory}'];
 CREATE OR REPLACE MACRO must(label, condition) AS
     CASE WHEN condition IS TRUE THEN label
          ELSE error('ASSERTION FAILED: ' || label) END;

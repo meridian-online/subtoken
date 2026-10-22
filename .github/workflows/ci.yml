@@ -12,12 +12,48 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # The DuckDB the SQL tests load the artifact into. The artifact declares a
-  # v1.2.0 stable-ABI floor, so it is expected to load on anything from 1.2 up;
-  # this is the version the gate actually exercises.
-  DUCKDB_VERSION: v1.5.5
+  # The DuckDB the SQL tests load the artifact into. The artifact is built on
+  # DuckDB 2.0's unstable v2 C API and its trailer names this exact release, so
+  # it loads on this version only.
+  DUCKDB_VERSION: v2.0.0
 
 jobs:
+  # The committed bindings must be exactly what the pinned bindgen writes from
+  # the vendored headers, on Linux as well as on a Mac, so a hand edit or a
+  # header bump without regeneration goes red.
+  bindings:
+    name: v2 bindings
+    # Pinned, with the libclang below, because both shape the generated text.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install libclang
+        # The major version comes from the script, which also points bindgen at it.
+        run: |
+          major="$(sed -n 's/^LIBCLANG_MAJOR="\(.*\)"/\1/p' scripts/regenerate_v2_bindings.sh)"
+          sudo apt-get update && sudo apt-get install -y "libclang-${major}-dev"
+
+      # The version here is the one BINDGEN_VERSION pins in the script.
+      - name: Cache bindgen
+        id: bindgen-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/bindgen
+          key: bindgen-cli-0.73.2
+
+      - name: Install bindgen
+        if: steps.bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install bindgen-cli --locked --version 0.73.2
+
+      - name: Check the bindings
+        run: scripts/regenerate_v2_bindings.sh --check
+
   check:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -26,9 +62,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            duckdb_asset: duckdb_cli-linux-amd64.zip
+            duckdb_asset: duckdb-cli-linux-amd64.tar.gz
           - os: macos-latest
-            duckdb_asset: duckdb_cli-osx-arm64.zip
+            duckdb_asset: duckdb-cli-osx-arm64.tar.gz
 
     steps:
       # `submodules` for extension-ci-tools: the descriptor check validates
@@ -60,9 +96,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${HOME}/.local/bin"
-          curl -fsSL -o duckdb_cli.zip \
+          curl -fsSL -o duckdb_cli.tar.gz \
             "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/${{ matrix.duckdb_asset }}"
-          unzip -o duckdb_cli.zip -d "${HOME}/.local/bin"
+          tar -xzf duckdb_cli.tar.gz -C "${HOME}/.local/bin"
           chmod +x "${HOME}/.local/bin/duckdb"
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 
@@ -178,9 +214,9 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            duckdb_asset: duckdb_cli-linux-amd64.zip
+            duckdb_asset: duckdb-cli-linux-amd64.tar.gz
           - os: macos-latest
-            duckdb_asset: duckdb_cli-osx-arm64.zip
+            duckdb_asset: duckdb-cli-osx-arm64.tar.gz
 
     steps:
       - uses: actions/checkout@v4
@@ -199,9 +235,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${HOME}/.local/bin"
-          curl -fsSL -o duckdb_cli.zip \
+          curl -fsSL -o duckdb_cli.tar.gz \
             "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/${{ matrix.duckdb_asset }}"
-          unzip -o duckdb_cli.zip -d "${HOME}/.local/bin"
+          tar -xzf duckdb_cli.tar.gz -C "${HOME}/.local/bin"
           chmod +x "${HOME}/.local/bin/duckdb"
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 

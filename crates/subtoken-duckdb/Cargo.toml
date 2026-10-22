@@ -14,6 +14,5 @@ name = "subtoken"
 crate-type = ["cdylib"]
 
 [dependencies]
-duckdb = { workspace = true }
-libduckdb-sys = { workspace = true }
 subtoken-core = { workspace = true }
+subtoken-duckdb-sys = { workspace = true }

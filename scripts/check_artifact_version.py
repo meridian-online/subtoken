@@ -30,16 +30,18 @@ WHAT THIS CHECKS, and why each expectation comes from where it does:
         against itself, which is a check that cannot fail.
 
     duckdb version      `MIN_DUCKDB_VERSION` in crates/subtoken-duckdb/src/lib.rs
-        The trailer's FIELD3 is the stable-C-API floor the artifact declares.
-        The Makefile's `TARGET_DUCKDB_VERSION` is a second copy of that constant
-        and says in a comment that it mirrors this one; comparing the trailer to
-        the Rust source is what makes the two copies unable to drift apart in
-        silence.
+        The trailer's FIELD3 is the exact DuckDB release the artifact is built
+        for. The Makefile's `TARGET_DUCKDB_VERSION` is a second copy of that
+        constant and says in a comment that it mirrors this one; comparing the
+        trailer to the Rust source is what makes the two copies unable to drift
+        apart in silence.
 
-    abi type            C_STRUCT, always
-        `USE_UNSTABLE_C_API` is deliberately unset, and the unstable ABI would
-        pin the binary to one exact DuckDB release. A build that acquired it
-        would still load — on precisely one version — so it has to be asserted.
+    abi type            C_STRUCT_UNSTABLE, always
+        The extension is built on DuckDB 2.0's v2 C API, which DuckDB 2.0.0
+        ships as unstable. DuckDB refuses a `C_STRUCT` trailer on an extension
+        that uses the v2 API, because the v2 API has no stable surface yet, so
+        a build that lost `USE_UNSTABLE_C_API` or the Makefile's `ABI_TYPE`
+        would not load anywhere. It has to be asserted.
 
 Stdlib only.
 
@@ -85,7 +87,7 @@ FIELD_NAMES = (
 # FIELD1's fixed value. DuckDB reads it to decide the file is an extension.
 MAGIC = "4"
 
-EXPECTED_ABI = "C_STRUCT"
+EXPECTED_ABI = "C_STRUCT_UNSTABLE"
 
 # The fields two recipes building the same tree must agree on. `platform` is
 # excluded on purpose: a cross-compiled build legitimately names a platform the
@@ -172,13 +174,13 @@ def disagreements(
         )
     if fields["duckdb_version"] != expected_duckdb_version:
         problems.append(
-            f"the artifact declares a DuckDB floor of {fields['duckdb_version']!r}, "
+            f"the artifact is built for DuckDB {fields['duckdb_version']!r}, "
             f"but MIN_DUCKDB_VERSION says {expected_duckdb_version!r}"
         )
     if fields["abi_type"] != EXPECTED_ABI:
         problems.append(
             f"the artifact declares ABI {fields['abi_type']!r}, expected {EXPECTED_ABI!r} — "
-            f"the unstable ABI pins the binary to one exact DuckDB release"
+            f"DuckDB loads an extension on the v2 C API only with the unstable ABI"
         )
     if expected_platform is not None and fields["platform"] != expected_platform:
         problems.append(
@@ -192,7 +194,7 @@ def synthetic_artifact(
     name: str,
     *,
     extension_version: str = "9.9.9",
-    duckdb_version: str = "v1.2.0",
+    duckdb_version: str = "v2.0.0",
     platform: str = "osx_arm64",
     abi_type: str = EXPECTED_ABI,
     magic: str = MAGIC,
@@ -245,7 +247,7 @@ def self_test() -> int:
         good = synthetic_artifact(work, "good.duckdb_extension", extension_version="1.2.3")
         fields = read_trailer(good)
         expect("reads the extension version", fields["extension_version"] == "1.2.3")
-        expect("reads the duckdb version", fields["duckdb_version"] == "v1.2.0")
+        expect("reads the duckdb version", fields["duckdb_version"] == "v2.0.0")
         expect("reads the platform", fields["platform"] == "osx_arm64")
         expect("reads the abi type", fields["abi_type"] == EXPECTED_ABI)
         expect("the unused fields are empty", fields["field6"] == "" and fields["field8"] == "")
@@ -253,29 +255,27 @@ def self_test() -> int:
         # And a matching tree clears.
         expect(
             "a matching artifact reports nothing",
-            disagreements(fields, "1.2.3", "v1.2.0", "osx_arm64") == [],
+            disagreements(fields, "1.2.3", "v2.0.0", "osx_arm64") == [],
         )
 
         # The measured defect: the artifact says an older version than the tree.
         expect(
             "a stale version is caught",
-            any("self-reports version" in problem for problem in disagreements(fields, "1.2.4", "v1.2.0", None)),
+            any("self-reports version" in problem for problem in disagreements(fields, "1.2.4", "v2.0.0", None)),
         )
         expect(
-            "a wrong DuckDB floor is caught",
-            any("DuckDB floor" in problem for problem in disagreements(fields, "1.2.3", "v1.5.5", None)),
+            "a wrong DuckDB version is caught",
+            any("built for DuckDB" in problem for problem in disagreements(fields, "1.2.3", "v2.0.1", None)),
         )
         expect(
             "a wrong platform is caught",
-            any("platform" in problem for problem in disagreements(fields, "1.2.3", "v1.2.0", "linux_amd64")),
+            any("platform" in problem for problem in disagreements(fields, "1.2.3", "v2.0.0", "linux_amd64")),
         )
 
-        unstable = read_trailer(
-            synthetic_artifact(work, "unstable.duckdb_extension", abi_type="C_STRUCT_UNSTABLE")
-        )
+        stable = read_trailer(synthetic_artifact(work, "stable.duckdb_extension", abi_type="C_STRUCT"))
         expect(
-            "the unstable ABI is caught",
-            any("ABI" in problem for problem in disagreements(unstable, "9.9.9", "v1.2.0", None)),
+            "the stable ABI is caught",
+            any("ABI" in problem for problem in disagreements(stable, "9.9.9", "v2.0.0", None)),
         )
 
         # A raw library is not an extension. Without the header check the last
@@ -315,8 +315,8 @@ def self_test() -> int:
     # The two expectations really are read out of the tree, not defaulted.
     version = version_in_cargo_toml()
     expect("Cargo.toml yields a version", bool(re.fullmatch(r"\d+\.\d+\.\d+", version)))
-    floor = min_duckdb_version()
-    expect("lib.rs yields a DuckDB floor", bool(re.fullmatch(r"v\d+\.\d+\.\d+", floor)))
+    target = min_duckdb_version()
+    expect("lib.rs yields a DuckDB version", bool(re.fullmatch(r"v\d+\.\d+\.\d+", target)))
 
     # And a manifest whose [workspace.package] has no version is an error rather
     # than a fallback onto some other table's version.
@@ -336,9 +336,9 @@ def self_test() -> int:
 
     print(
         f"self-test ok: the trailer reader recovers all {len(FIELD_NAMES)} fields from a "
-        f"synthetic artifact, reports a stale version, a wrong DuckDB floor, a wrong "
-        f"platform and the unstable ABI, refuses a raw library and a shifted trailer, and "
-        f"reads {version} out of Cargo.toml and {floor} out of lib.rs"
+        f"synthetic artifact, reports a stale version, a wrong DuckDB version, a wrong "
+        f"platform and the stable ABI, refuses a raw library and a shifted trailer, and "
+        f"reads {version} out of Cargo.toml and {target} out of lib.rs"
     )
     return 0
 
@@ -379,8 +379,8 @@ def main() -> int:
             print(f"FAIL: {error}", file=sys.stderr)
             return 1
         expected_version = version_in_cargo_toml()
-        expected_floor = min_duckdb_version()
-        problems = disagreements(fields, expected_version, expected_floor, args.expect_platform)
+        expected_target = min_duckdb_version()
+        problems = disagreements(fields, expected_version, expected_target, args.expect_platform)
         if problems:
             print(f"FAIL: {args.artifact} does not report this tree:", file=sys.stderr)
             for problem in problems:
@@ -394,7 +394,7 @@ def main() -> int:
         else:
             print(
                 f"ok: {args.artifact} self-reports version {fields['extension_version']}, "
-                f"matching Cargo.toml; DuckDB floor {fields['duckdb_version']}, matching "
+                f"matching Cargo.toml; DuckDB {fields['duckdb_version']}, matching "
                 f"MIN_DUCKDB_VERSION; ABI {fields['abi_type']}; platform {fields['platform']}"
             )
 

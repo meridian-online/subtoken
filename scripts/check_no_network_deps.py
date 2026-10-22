@@ -38,11 +38,8 @@ UNDEFINED SYMBOLS
 
 RUNTIME DEPENDENCY TREE
     `cargo tree --workspace --edges normal` is the set of crates compiled into
-    the artifact. Build-dependencies are deliberately excluded: `libduckdb-sys`
-    takes `ureq` and `rustls` as build-dependencies to fetch DuckDB's headers,
-    and a build-dependency compiles into the build script, not into the cdylib.
-    Excluding them is the difference between reporting a real defect and
-    reporting the DuckDB bindings.
+    the artifact. Build-dependencies are excluded, because a build-dependency
+    compiles into a build script, not into the cdylib.
 
 LINKED LIBRARIES
     The dynamic libraries the built artifact actually names. A vendored OpenSSL

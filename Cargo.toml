@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/subtoken-core", "crates/subtoken-duckdb"]
+members = ["crates/subtoken-core", "crates/subtoken-duckdb", "crates/subtoken-duckdb-sys"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/meridian-online/subtoken"
@@ -37,13 +37,8 @@ sha2 = "0.10"
 # through JSON and read `model.unk_token`. There is no public accessor for it.
 serde_json = "1"
 
-# Pinned exactly, matching the DuckDB C API surface this artifact is built
-# against. The stable C_STRUCT ABI floor the packaged artifact declares is
-# `MIN_DUCKDB_VERSION` in crates/subtoken-duckdb/src/lib.rs.
-duckdb = { version = "=1.10505.0", features = ["loadable-extension", "vscalar"] }
-libduckdb-sys = "=1.10505.0"
-
 subtoken-core = { path = "crates/subtoken-core" }
+subtoken-duckdb-sys = { path = "crates/subtoken-duckdb-sys" }
 
 [profile.release]
 # The bundled weights dominate the artifact; there is no reason to also carry

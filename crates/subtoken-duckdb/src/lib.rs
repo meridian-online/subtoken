@@ -65,114 +65,70 @@
 //! answers no for a text that is past a cut but lost nothing to it, which is
 //! the question an analyst is actually asking. `subtoken_is_truncated(NULL)` is
 //! `NULL`, matching `subtoken_embed(NULL)`.
+//!
+//! # Registration on DuckDB 2.0
+//!
+//! The extension is built on DuckDB 2.0's v2 C API, which DuckDB 2.0.0 ships
+//! as unstable. The artifact's footer is `C_STRUCT_UNSTABLE` with DuckDB
+//! version `v2.0.0`, so it loads on exactly that DuckDB release. The README's
+//! "Building it" section lists what a new release changes, starting with
+//! [`MIN_DUCKDB_VERSION`].
+//!
+//! The crate carries its own v2 bindings instead of depending on duckdb-rs:
+//! `subtoken-duckdb-sys` vendors DuckDB v2.0.0's headers, and
+//! `scripts/regenerate_v2_bindings.sh` generates the bindings from them; CI
+//! fails if the checked-in bindings drift from the headers.
+//!
+//! What `duckdb_functions()` shows for each function (parameter names,
+//! description, example, category) comes from the `DOCS` table in this file.
+//! `scripts/check_documented_surface.py` and SQL test 13 hold it to the
+//! registered catalog.
+//!
+//! DuckDB calls [`subtoken_init_c_api_v2`] at `LOAD`. It fetches the API table
+//! (`subtoken_duckdb_sys::init`), takes a factory from the load's context, and
+//! [`register_all`] registers the seven functions through the builder in
+//! `capi.rs`: each with its parameters, its return type parsed from SQL type
+//! text, its stability, and one exec callback shared by all seven that hands
+//! the function a [`capi::Call`] to read its argument from and write its
+//! result to. A failure at any step is reported through the load's error slot,
+//! and a panic is caught and reported the same way, so nothing unwinds into
+//! DuckDB.
 
-use std::error::Error;
-use std::ffi::CString;
+mod capi;
+
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
-use duckdb::core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId};
-use duckdb::types::DuckString;
-use duckdb::vscalar::{ScalarFunctionSignature, VScalar};
-use duckdb::vtab::arrow::WritableVector;
-use duckdb::Result;
-use libduckdb_sys::duckdb_string_t;
+use capi::{guard, Call, Docs, Registrar, ScalarFunction};
+use subtoken_duckdb_sys::duckdb_v2_extension_input;
 
-/// The stable C API floor this artifact declares, so one build stays loadable
-/// across DuckDB 1.2 and later.
-const MIN_DUCKDB_VERSION: &str = "v1.2.0";
+/// The exact DuckDB release this artifact is built for and declares in its
+/// footer. The v2 C API is unstable on DuckDB 2.0.0, so DuckDB loads the
+/// artifact on this release only.
+const MIN_DUCKDB_VERSION: &str = "v2.0.0";
 
-/// One input cell: SQL NULL, or the text of the row.
-enum Cell<'a> {
-    Null,
-    Text(std::borrow::Cow<'a, str>),
-}
+/// The footer's DuckDB version and the API table `init` requests name the same
+/// release, or the build fails.
+const _: () = assert!(
+    bytes_equal(
+        MIN_DUCKDB_VERSION.as_bytes(),
+        subtoken_duckdb_sys::API_VERSION.to_bytes()
+    ),
+    "MIN_DUCKDB_VERSION and subtoken_duckdb_sys::API_VERSION disagree"
+);
 
-/// Read column `col` of `input` as VARCHAR, distinguishing NULL from empty.
-fn read_varchar_column(input: &mut DataChunkHandle, col: usize) -> Vec<Cell<'static>> {
-    let rows = input.len();
-    let vector = input.flat_vector(col);
-    // SAFETY: `rows` is the row count DuckDB supplied for this invocation, and
-    // the column is VARCHAR by the registered signature, so its physical
-    // storage is `duckdb_string_t`.
-    let values = unsafe { vector.as_slice_with_len::<duckdb_string_t>(rows) };
-    let mut cells = Vec::with_capacity(rows);
-    for (row, value) in values.iter().enumerate().take(rows) {
-        if vector.row_is_null(row as u64) {
-            cells.push(Cell::Null);
-        } else {
-            let mut owned = *value;
-            let text = DuckString::new(&mut owned).as_str().into_owned();
-            cells.push(Cell::Text(std::borrow::Cow::Owned(text)));
-        }
+const fn bytes_equal(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
     }
-    cells
-}
-
-/// Write one `FLOAT[]` per row, with NULL rows left null.
-fn write_float_lists(
-    output: &mut dyn WritableVector,
-    rows: &[Option<Arc<[f32]>>],
-) -> Result<(), Box<dyn Error>> {
-    let total: usize = rows.iter().flatten().map(|v| v.len()).sum();
-    let mut list = output.list_vector();
-    list.try_set_len(total)?;
-
-    if total > 0 {
-        let mut child = list.child(total);
-        // SAFETY: `total` floats were just reserved in the child vector, and the
-        // child is FLOAT by the registered return type.
-        let slice = unsafe { child.as_mut_slice_with_len::<f32>(total) };
-        let mut offset = 0usize;
-        for vector in rows.iter().flatten() {
-            slice[offset..offset + vector.len()].copy_from_slice(vector);
-            offset += vector.len();
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
         }
+        i += 1;
     }
-
-    let mut offset = 0usize;
-    for (row, entry) in rows.iter().enumerate() {
-        match entry {
-            Some(vector) => {
-                list.set_entry(row, offset, vector.len());
-                offset += vector.len();
-            }
-            None => {
-                // A null list entry still needs a well-formed (offset, length),
-                // or a consumer that ignores validity reads a stale entry.
-                list.set_entry(row, offset, 0);
-                list.set_null(row);
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Write one `BOOLEAN` per row, with NULL rows left null.
-///
-/// The slice write and the null marking are two separate passes over `rows`
-/// rather than one, because the slice borrows `output` and `FlatVector::set_null`
-/// needs its own `&mut` — the same reason [`write_float_lists`] separates the
-/// float write from `set_entry`/`set_null`.
-fn write_bool_column(
-    output: &mut dyn WritableVector,
-    rows: &[Option<bool>],
-) -> Result<(), Box<dyn Error>> {
-    let mut vector = output.flat_vector();
-    {
-        // SAFETY: `rows.len()` slots were reserved for this invocation and the
-        // output column is BOOLEAN by the registered return type, whose
-        // physical storage is `bool`.
-        let slice = unsafe { vector.as_mut_slice_with_len::<bool>(rows.len()) };
-        for (row, value) in rows.iter().enumerate() {
-            slice[row] = value.unwrap_or(false);
-        }
-    }
-    for (row, value) in rows.iter().enumerate() {
-        if value.is_none() {
-            vector.set_null(row);
-        }
-    }
-    Ok(())
+    true
 }
 
 /// `subtoken_embed(text VARCHAR) → FLOAT[]`
@@ -180,33 +136,16 @@ fn write_bool_column(
 /// The vector for one string, from the model bundled in this binary. No network
 /// call, no API key, no configuration: the model is parsed out of the binary on
 /// the first call and reused for the rest of the session.
-struct Embed;
-
-impl VScalar for Embed {
-    type State = ();
-
-    fn invoke(
-        _state: &Self::State,
-        input: &mut DataChunkHandle,
-        output: &mut dyn WritableVector,
-    ) -> Result<(), Box<dyn Error>> {
-        let cells = read_varchar_column(input, 0);
-        let mut vectors: Vec<Option<Arc<[f32]>>> = Vec::with_capacity(cells.len());
-        for cell in &cells {
-            match cell {
-                Cell::Null => vectors.push(None),
-                Cell::Text(text) => vectors.push(Some(subtoken_core::embed(text)?)),
-            }
+fn embed(call: &mut Call) -> Result<(), String> {
+    let cells = call.varchar_arg(0)?;
+    let mut vectors: Vec<Option<Arc<[f32]>>> = Vec::with_capacity(cells.len());
+    for cell in &cells {
+        match cell {
+            None => vectors.push(None),
+            Some(text) => vectors.push(Some(subtoken_core::embed(text)?)),
         }
-        write_float_lists(output, &vectors)
     }
-
-    fn signatures() -> Vec<ScalarFunctionSignature> {
-        vec![ScalarFunctionSignature::exact(
-            vec![LogicalTypeHandle::from(LogicalTypeId::Varchar)],
-            LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Float)),
-        )]
-    }
+    call.write_float_lists(&vectors)
 }
 
 /// `subtoken_is_truncated(text VARCHAR) → BOOLEAN`
@@ -216,60 +155,21 @@ impl VScalar for Embed {
 /// other. False for a text that ran past a limit without losing an id to it.
 /// See the module docs' *Truncation* section for the limits and what a caller
 /// does with this.
-struct IsTruncated;
-
-impl VScalar for IsTruncated {
-    type State = ();
-
-    fn invoke(
-        _state: &Self::State,
-        input: &mut DataChunkHandle,
-        output: &mut dyn WritableVector,
-    ) -> Result<(), Box<dyn Error>> {
-        let cells = read_varchar_column(input, 0);
-        let mut rows: Vec<Option<bool>> = Vec::with_capacity(cells.len());
-        for cell in &cells {
-            match cell {
-                Cell::Null => rows.push(None),
-                Cell::Text(text) => rows.push(Some(subtoken_core::is_truncated(text)?)),
-            }
+fn is_truncated(call: &mut Call) -> Result<(), String> {
+    let cells = call.varchar_arg(0)?;
+    let mut rows: Vec<Option<bool>> = Vec::with_capacity(cells.len());
+    for cell in &cells {
+        match cell {
+            None => rows.push(None),
+            Some(text) => rows.push(Some(subtoken_core::is_truncated(text)?)),
         }
-        write_bool_column(output, &rows)
     }
-
-    fn signatures() -> Vec<ScalarFunctionSignature> {
-        vec![ScalarFunctionSignature::exact(
-            vec![LogicalTypeHandle::from(LogicalTypeId::Varchar)],
-            LogicalTypeHandle::from(LogicalTypeId::Boolean),
-        )]
-    }
+    call.write_bools(&rows)
 }
 
 /// `subtoken_version() → VARCHAR`
-struct Version;
-
-impl VScalar for Version {
-    type State = ();
-
-    fn invoke(
-        _state: &Self::State,
-        input: &mut DataChunkHandle,
-        output: &mut dyn WritableVector,
-    ) -> Result<(), Box<dyn Error>> {
-        let text = CString::new(subtoken_core::describe())?;
-        let vector = output.flat_vector();
-        for row in 0..input.len().max(1) {
-            vector.insert(row, text.clone());
-        }
-        Ok(())
-    }
-
-    fn signatures() -> Vec<ScalarFunctionSignature> {
-        vec![ScalarFunctionSignature::exact(
-            vec![],
-            LogicalTypeHandle::from(LogicalTypeId::Varchar),
-        )]
-    }
+fn version(call: &mut Call) -> Result<(), String> {
+    call.write_varchar_constant(&subtoken_core::describe())
 }
 
 /// `subtoken_model_id() → VARCHAR`
@@ -279,31 +179,23 @@ impl VScalar for Version {
 /// not joinable; this is the value an analyst stores beside a vector column so
 /// that a later session can refuse to compare across a model change **before**
 /// comparing anything.
-struct ModelId;
-
-impl VScalar for ModelId {
-    type State = ();
-
-    fn invoke(
-        _state: &Self::State,
-        input: &mut DataChunkHandle,
-        output: &mut dyn WritableVector,
-    ) -> Result<(), Box<dyn Error>> {
-        let text = CString::new(subtoken_core::model_id()?)?;
-        let vector = output.flat_vector();
-        for row in 0..input.len().max(1) {
-            vector.insert(row, text.clone());
-        }
-        Ok(())
-    }
-
-    fn signatures() -> Vec<ScalarFunctionSignature> {
-        vec![ScalarFunctionSignature::exact(
-            vec![],
-            LogicalTypeHandle::from(LogicalTypeId::Varchar),
-        )]
-    }
+fn model_id(call: &mut Call) -> Result<(), String> {
+    call.write_varchar_constant(&subtoken_core::model_id()?)
 }
+
+/// Field order of the STRUCT `subtoken_models()` returns, with the DuckDB type
+/// of each. The order is part of the signature, so it is written once and used
+/// for both the declared type and the write.
+const MODEL_FIELDS: [(&str, &str); 8] = [
+    ("model", "VARCHAR"),
+    ("backend", "VARCHAR"),
+    ("revision", "VARCHAR"),
+    ("width", "BIGINT"),
+    ("input_limit", "BIGINT"),
+    ("licence", "VARCHAR"),
+    ("tier", "VARCHAR"),
+    ("key", "VARCHAR"),
+];
 
 /// `subtoken_models() → STRUCT(model, backend, revision, width, input_limit, licence, tier, "key")`
 ///
@@ -319,75 +211,34 @@ impl VScalar for ModelId {
 /// catalog compares exactly that column — a table function is invisible to it,
 /// and so is a documented return type that has drifted from the real one. The
 /// row is the same either way; this shape is the one a gate can see.
-struct Models;
-
-/// Field order of the STRUCT `subtoken_models()` returns, with the DuckDB type
-/// of each. The order is part of the signature, so it is written once and used
-/// for both the declared type and the write.
-const MODEL_FIELDS: [(&str, LogicalTypeId); 8] = [
-    ("model", LogicalTypeId::Varchar),
-    ("backend", LogicalTypeId::Varchar),
-    ("revision", LogicalTypeId::Varchar),
-    ("width", LogicalTypeId::Bigint),
-    ("input_limit", LogicalTypeId::Bigint),
-    ("licence", LogicalTypeId::Varchar),
-    ("tier", LogicalTypeId::Varchar),
-    ("key", LogicalTypeId::Varchar),
-];
-
-impl VScalar for Models {
-    type State = ();
-
-    fn invoke(
-        _state: &Self::State,
-        input: &mut DataChunkHandle,
-        output: &mut dyn WritableVector,
-    ) -> Result<(), Box<dyn Error>> {
-        let row = subtoken_core::catalogue()?;
-        // Same order as MODEL_FIELDS, and the compiler is no help if it is not:
-        // both lists are written out here so the pairing is one line apart.
-        let text: [(usize, &str); 6] = [
-            (0, row.model),
-            (1, row.backend),
-            (2, row.revision),
-            (5, row.licence),
-            (6, row.tier),
-            (7, &row.key),
-        ];
-        let numeric: [(usize, i64); 2] = [(3, row.width as i64), (4, row.input_limit as i64)];
-
-        let rows = input.len().max(1);
-        let parent = output.struct_vector();
-        for (index, value) in text {
-            let child = parent.child(index, rows);
-            let value = CString::new(value)?;
-            for slot in 0..rows {
-                child.insert(slot, value.clone());
-            }
-        }
-        for (index, value) in numeric {
-            let mut child = parent.child(index, rows);
-            // SAFETY: `rows` slots were reserved above and the child is BIGINT
-            // by the registered return type.
-            let slice = unsafe { child.as_mut_slice_with_len::<i64>(rows) };
-            for slot in slice.iter_mut() {
-                *slot = value;
-            }
-        }
-        Ok(())
+fn models(call: &mut Call) -> Result<(), String> {
+    let row = subtoken_core::catalogue()?;
+    // Same order as MODEL_FIELDS, and the compiler is no help if it is not:
+    // both lists are written out here so the pairing is one line apart.
+    let text: [(usize, &str); 6] = [
+        (0, row.model),
+        (1, row.backend),
+        (2, row.revision),
+        (5, row.licence),
+        (6, row.tier),
+        (7, &row.key),
+    ];
+    let numeric: [(usize, i64); 2] = [(3, row.width as i64), (4, row.input_limit as i64)];
+    for (index, value) in text {
+        call.struct_child(index)?.write_varchar_constant(value)?;
     }
-
-    fn signatures() -> Vec<ScalarFunctionSignature> {
-        let fields: Vec<(&str, LogicalTypeHandle)> = MODEL_FIELDS
-            .iter()
-            .map(|(name, kind)| (*name, LogicalTypeHandle::from(*kind)))
-            .collect();
-        vec![ScalarFunctionSignature::exact(
-            vec![],
-            LogicalTypeHandle::struct_type(&fields),
-        )]
+    for (index, value) in numeric {
+        call.struct_child(index)?.write_bigint_constant(value)?;
     }
+    Ok(())
 }
+
+/// Field order of the STRUCT `subtoken_cache_stats()` returns, every field a
+/// BIGINT. The order is part of the signature, so it is written once and used
+/// for both the type and the write.
+const STATS_FIELDS: [&str; 6] = [
+    "hits", "misses", "encoded", "uncached", "entries", "capacity",
+];
 
 /// `subtoken_cache_stats() → STRUCT(hits, misses, encoded, uncached, entries, capacity)`
 ///
@@ -399,164 +250,180 @@ impl VScalar for Models {
 /// means the column has more distinct values than `capacity`, so a repeated
 /// query will re-embed the excess — which is the one condition under which
 /// `encoded` legitimately moves on a repeat.
-struct CacheStats;
-
-/// Field order of the STRUCT `subtoken_cache_stats()` returns. The order is
-/// part of the signature, so it is written once and used for both the type and
-/// the write.
-const STATS_FIELDS: [&str; 6] = [
-    "hits", "misses", "encoded", "uncached", "entries", "capacity",
-];
-
-impl VScalar for CacheStats {
-    type State = ();
-
-    fn invoke(
-        _state: &Self::State,
-        input: &mut DataChunkHandle,
-        output: &mut dyn WritableVector,
-    ) -> Result<(), Box<dyn Error>> {
-        let stats = subtoken_core::stats();
-        let values = [
-            stats.hits,
-            stats.misses,
-            stats.encoded,
-            stats.uncached,
-            stats.entries,
-            stats.capacity,
-        ];
-        let rows = input.len().max(1);
-        let parent = output.struct_vector();
-        for (index, value) in values.iter().enumerate() {
-            let mut child = parent.child(index, rows);
-            // SAFETY: `rows` slots were reserved above and the child is BIGINT
-            // by the registered return type.
-            let slice = unsafe { child.as_mut_slice_with_len::<i64>(rows) };
-            for slot in slice.iter_mut() {
-                *slot = *value as i64;
-            }
-        }
-        Ok(())
-    }
-
-    fn signatures() -> Vec<ScalarFunctionSignature> {
-        let fields: Vec<(&str, LogicalTypeHandle)> = STATS_FIELDS
-            .iter()
-            .map(|name| (*name, LogicalTypeHandle::from(LogicalTypeId::Bigint)))
-            .collect();
-        vec![ScalarFunctionSignature::exact(
-            vec![],
-            LogicalTypeHandle::struct_type(&fields),
-        )]
-    }
-
-    /// Without this DuckDB folds a zero-argument scalar to a constant and the
-    /// counters would be read once and reused for the rest of the session.
-    fn volatile() -> bool {
-        true
-    }
-}
-
-/// `subtoken_cache_clear() → BIGINT` — vectors dropped.
-struct CacheClear;
-
-impl VScalar for CacheClear {
-    type State = ();
-
-    fn invoke(
-        _state: &Self::State,
-        input: &mut DataChunkHandle,
-        output: &mut dyn WritableVector,
-    ) -> Result<(), Box<dyn Error>> {
-        let dropped = subtoken_core::clear_cache() as i64;
-        let rows = input.len().max(1);
-        let mut vector = output.flat_vector();
-        // SAFETY: the output vector holds at least `rows` BIGINT slots by the
-        // registered return type and DuckDB's chunk size.
-        let slice = unsafe { vector.as_mut_slice_with_len::<i64>(rows) };
-        for slot in slice.iter_mut() {
-            *slot = dropped;
-        }
-        Ok(())
-    }
-
-    fn signatures() -> Vec<ScalarFunctionSignature> {
-        vec![ScalarFunctionSignature::exact(
-            vec![],
-            LogicalTypeHandle::from(LogicalTypeId::Bigint),
-        )]
-    }
-
-    fn volatile() -> bool {
-        true
-    }
-}
-
-/// Register the whole surface.
 ///
-/// # Safety
-/// The connection must be valid for the lifetime of the extension.
-pub unsafe fn extension_entrypoint(con: duckdb::Connection) -> Result<(), Box<dyn Error>> {
-    con.register_scalar_function::<Embed>("subtoken_embed")?;
-    con.register_scalar_function::<IsTruncated>("subtoken_is_truncated")?;
-    con.register_scalar_function::<Version>("subtoken_version")?;
-    con.register_scalar_function::<ModelId>("subtoken_model_id")?;
-    con.register_scalar_function::<Models>("subtoken_models")?;
-    con.register_scalar_function::<CacheStats>("subtoken_cache_stats")?;
-    con.register_scalar_function::<CacheClear>("subtoken_cache_clear")?;
+/// Registered VOLATILE: otherwise DuckDB folds a zero-argument scalar to a
+/// constant and the counters would be read once and reused for the rest of
+/// the session.
+fn cache_stats(call: &mut Call) -> Result<(), String> {
+    let stats = subtoken_core::stats();
+    let values = [
+        stats.hits,
+        stats.misses,
+        stats.encoded,
+        stats.uncached,
+        stats.entries,
+        stats.capacity,
+    ];
+    for (index, value) in values.iter().enumerate() {
+        call.struct_child(index)?
+            .write_bigint_constant(*value as i64)?;
+    }
     Ok(())
 }
 
-/// The load path.
-///
-/// # Safety
-/// Called by DuckDB at load with a live extension-info handle and access table.
-pub unsafe fn init_extension(
-    info: duckdb::ffi::duckdb_extension_info,
-    access: *const duckdb::ffi::duckdb_extension_access,
-) -> std::result::Result<bool, Box<dyn Error>> {
-    let have_api_struct =
-        duckdb::ffi::duckdb_rs_extension_api_init(info, access, MIN_DUCKDB_VERSION)?;
-    if !have_api_struct {
-        // The API version did not match; DuckDB already knows why.
-        return Ok(false);
-    }
-
-    let get_database = (*access)
-        .get_database
-        .ok_or("get_database function pointer is null in duckdb_extension_access")?;
-    let db_ptr = get_database(info);
-    if db_ptr.is_null() {
-        return Ok(false);
-    }
-    let db: duckdb::ffi::duckdb_database = *db_ptr;
-
-    let connection = duckdb::Connection::open_from_raw(db.cast())?;
-    extension_entrypoint(connection)?;
-    Ok(true)
+/// `subtoken_cache_clear() → BIGINT` — vectors dropped. Registered VOLATILE,
+/// like `subtoken_cache_stats()`, so every call clears.
+fn cache_clear(call: &mut Call) -> Result<(), String> {
+    let dropped = subtoken_core::clear_cache() as i64;
+    let rows = vec![dropped; call.rows()];
+    call.write_bigints(&rows)
 }
 
-/// # Safety
+/// SQL type text for a STRUCT with these fields, in this order. Field names
+/// are quoted, so `key` reads as a name rather than a keyword.
+fn struct_type<'a>(fields: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
+    let fields: Vec<String> = fields
+        .into_iter()
+        .map(|(name, ty)| format!("\"{name}\" {ty}"))
+        .collect();
+    format!("STRUCT({})", fields.join(", "))
+}
+
+/// What `duckdb_functions()` reports for each function: its description, one
+/// example and one category. This table is the one place the text is written;
+/// registration reads it, and `scripts/check_documented_surface.py` compares the
+/// loaded catalog with it and runs every example.
+/// Each entry is plain literals, so that script can parse it.
+pub(crate) const DOCS: [(&str, Docs); 7] = [
+    (
+        "subtoken_embed",
+        Docs {
+            description: "Returns a unit-length FLOAT[] vector for text from the model bundled in the extension, with no network call; text with no in-vocabulary tokens (including '') gives the all-zero vector, and NULL gives NULL.",
+            example: "subtoken_embed('a quiet street near the river')",
+            category: "embedding",
+        },
+    ),
+    (
+        "subtoken_is_truncated",
+        Docs {
+            description: "Returns true when subtoken_embed(text) had to drop part of text to fit the model's input limits, so its vector does not reflect all of it.",
+            example: "subtoken_is_truncated(repeat('word ', 2000))",
+            category: "embedding",
+        },
+    ),
+    (
+        "subtoken_version",
+        Docs {
+            description: "Returns one line naming this build, the bundled model, its revision and the vector width.",
+            example: "subtoken_version()",
+            category: "metadata",
+        },
+    ),
+    (
+        "subtoken_model_id",
+        Docs {
+            description: "Returns the bundled model's full key; store it beside a vector column so a later session can refuse to compare vectors from a different model.",
+            example: "subtoken_model_id()",
+            category: "metadata",
+        },
+    ),
+    (
+        "subtoken_models",
+        Docs {
+            description: "Returns the catalogue row for the bundled model: name, backend, revision, width, input limit, licence, support tier and key.",
+            example: "subtoken_models().width",
+            category: "metadata",
+        },
+    ),
+    (
+        "subtoken_cache_stats",
+        Docs {
+            description: "Returns the embedding cache's counters since the last subtoken_cache_clear(): hits, misses, encoder runs, lookups too full to store, entries and capacity.",
+            example: "subtoken_cache_stats()",
+            category: "cache",
+        },
+    ),
+    (
+        "subtoken_cache_clear",
+        Docs {
+            description: "Drops every cached vector, resets the cache counters and returns how many vectors were dropped.",
+            example: "subtoken_cache_clear()",
+            category: "cache",
+        },
+    ),
+];
+
+/// Registers the whole surface.
+fn register_all(r: &Registrar) -> Result<(), String> {
+    ScalarFunction::new("subtoken_embed")
+        .parameter("text", "VARCHAR")
+        .returns("FLOAT[]")
+        .docs(&DOCS[0].1)
+        .exec(embed)
+        .register(r)?;
+    ScalarFunction::new("subtoken_is_truncated")
+        .parameter("text", "VARCHAR")
+        .returns("BOOLEAN")
+        .docs(&DOCS[1].1)
+        .exec(is_truncated)
+        .register(r)?;
+    ScalarFunction::new("subtoken_version")
+        .returns("VARCHAR")
+        .docs(&DOCS[2].1)
+        .exec(version)
+        .register(r)?;
+    ScalarFunction::new("subtoken_model_id")
+        .returns("VARCHAR")
+        .docs(&DOCS[3].1)
+        .exec(model_id)
+        .register(r)?;
+    ScalarFunction::new("subtoken_models")
+        .returns(struct_type(MODEL_FIELDS))
+        .docs(&DOCS[4].1)
+        .exec(models)
+        .register(r)?;
+    ScalarFunction::new("subtoken_cache_stats")
+        .returns(struct_type(STATS_FIELDS.map(|name| (name, "BIGINT"))))
+        .volatile()
+        .docs(&DOCS[5].1)
+        .exec(cache_stats)
+        .register(r)?;
+    ScalarFunction::new("subtoken_cache_clear")
+        .returns("BIGINT")
+        .volatile()
+        .docs(&DOCS[6].1)
+        .exec(cache_clear)
+        .register(r)?;
+    Ok(())
+}
+
 /// The symbol DuckDB calls when loading the extension.
+///
+/// If `get_api` returns NULL the load has already failed and DuckDB knows why,
+/// so this returns without touching the error slot. Any other failure, or a
+/// panic, is written into the slot, which DuckDB owns.
+///
+/// # Safety
+///
+/// Called by DuckDB at load with a live `duckdb_v2_extension_input`.
 #[no_mangle]
-pub unsafe extern "C" fn subtoken_init_c_api(
-    info: duckdb::ffi::duckdb_extension_info,
-    access: *const duckdb::ffi::duckdb_extension_access,
-) -> bool {
-    match init_extension(info, access) {
-        Ok(loaded) => loaded,
-        Err(error) => {
-            if let Some(set_error) = (*access).set_error {
-                match CString::new(error.to_string()) {
-                    Ok(message) => set_error(info, message.as_ptr()),
-                    Err(_) => set_error(
-                        info,
-                        c"subtoken failed to load, and the reason could not be converted to a C string"
-                            .as_ptr(),
-                    ),
-                }
-            }
-            false
+pub unsafe extern "C" fn subtoken_init_c_api_v2(input: *mut duckdb_v2_extension_input) {
+    let result = guard(AssertUnwindSafe(|| {
+        // SAFETY: DuckDB passes a live input to the entrypoint.
+        if !unsafe { subtoken_duckdb_sys::init(input) } {
+            return Ok(());
         }
+        // SAFETY: `input` is live, `init` succeeded on it, and the registrar
+        // is dropped at the end of this closure, before the entrypoint returns.
+        let registrar = unsafe { Registrar::from_input(input) }?;
+        register_all(&registrar)
+    }));
+    if let Err(message) = result {
+        // SAFETY: `input` is live and its `err` is the slot DuckDB gave this
+        // load. `report` calls `api()`, which panics if `init` never stored a
+        // table, so it is guarded; then there is nothing left to report with.
+        let _ = std::panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+            capi::report((*input).err, &message)
+        }));
     }
 }

@@ -34,6 +34,9 @@ from dataclasses import dataclass, field
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 CORE = "crates/subtoken-core/src"
 GLUE = "crates/subtoken-duckdb/src/lib.rs"
+#: The safe layer over DuckDB's v2 C API: the vector readers and writers the
+#: seven functions in GLUE call.
+CAPI = "crates/subtoken-duckdb/src/capi.rs"
 ASSETS = "models/potion-base-8M"
 
 #: The packaged artifact `make extension` writes, and which every SQL and script
@@ -1082,8 +1085,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_uncached_count_is_not_reported_to_sql",
         file=GLUE,
-        old="            stats.uncached,\n            stats.entries,",
-        new="            stats.entries,\n            stats.uncached,",
+        old="        stats.uncached,\n        stats.entries,",
+        new="        stats.entries,\n        stats.uncached,",
         expect_red="07_at_the_scale",
         kind="sql",
     ),
@@ -1091,40 +1094,47 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="sql_null_stops_propagating_and_becomes_a_zero_vector",
         file=GLUE,
-        old="                Cell::Null => vectors.push(None),",
-        new='                Cell::Null => vectors.push(Some(subtoken_core::embed("")?)),',
+        old="            None => vectors.push(None),",
+        new='            None => vectors.push(Some(subtoken_core::embed("")?)),',
         expect_red="04_null_and_empty",
         kind="sql",
     ),
     Mutation(
         name="a_null_row_is_written_without_its_validity_bit",
-        file=GLUE,
-        old="                list.set_entry(row, offset, 0);\n                list.set_null(row);",
-        new="                list.set_entry(row, offset, 0);",
+        file=CAPI,
+        old=(
+            "            ptr::copy_nonoverlapping(entries.as_ptr(), slots, entries.len());\n"
+            "            for (row, value) in rows.iter().enumerate() {\n"
+            "                if value.is_none() {\n"
+            "                    v2!(duckdb_v2_vector_set_null(self.result, row as idx_t))?;\n"
+            "                }\n"
+            "            }"
+        ),
+        new="            ptr::copy_nonoverlapping(entries.as_ptr(), slots, entries.len());",
         expect_red="04_null_and_empty",
         kind="sql",
     ),
     Mutation(
         name="every_row_reads_the_child_vector_from_offset_zero",
-        file=GLUE,
-        old="                list.set_entry(row, offset, vector.len());\n                offset += vector.len();",
-        new="                list.set_entry(row, 0, vector.len());\n                offset += vector.len();",
+        file=CAPI,
+        old="                offset: offset as idx_t,\n                length: length as idx_t,",
+        new="                offset: 0,\n                length: length as idx_t,",
         expect_red="04_null_and_empty",
         kind="sql",
     ),
     Mutation(
         name="the_scalar_stops_using_the_cache",
         file=GLUE,
-        old="Cell::Text(text) => vectors.push(Some(subtoken_core::embed(text)?)),",
-        new="Cell::Text(text) => vectors.push(Some(std::sync::Arc::from(\n                    subtoken_core::embed_uncached(text)?.into_boxed_slice(),\n                ))),",
+        old="Some(text) => vectors.push(Some(subtoken_core::embed(text)?)),",
+        new="Some(text) => vectors.push(Some(std::sync::Arc::from(\n                subtoken_core::embed_uncached(text)?.into_boxed_slice(),\n            ))),",
         expect_red="03_a_repeated_query",
         kind="sql",
     ),
     Mutation(
         name="cache_stats_is_folded_to_a_constant_because_it_is_no_longer_volatile",
         file=GLUE,
-        old="    /// Without this DuckDB folds a zero-argument scalar to a constant and the\n    /// counters would be read once and reused for the rest of the session.\n    fn volatile() -> bool {\n        true\n    }",
-        new="",
+        old="        .returns(struct_type(STATS_FIELDS.map(|name| (name, \"BIGINT\"))))\n        .volatile()\n",
+        new="        .returns(struct_type(STATS_FIELDS.map(|name| (name, \"BIGINT\"))))\n",
         expect_red="03_a_repeated_query",
         kind="sql",
     ),
@@ -1150,19 +1160,50 @@ MUTATIONS: list[Mutation] = [
         expect_red="06_text_the_tokenizer",
         kind="sql",
     ),
+    Mutation(
+        name="an_fsst_vector_is_viewed_without_being_flattened",
+        file=CAPI,
+        old=(
+            "            if kind == DUCKDB_V2_VECTOR_TYPE_DUCKDB_V2_VECTOR_TYPE_OTHER {\n"
+            "                v2!(duckdb_v2_vector_flatten(vector))?;\n"
+            "            }\n"
+        ),
+        new="",
+        expect_red="12_a_compressed_column",
+        kind="sql",
+    ),
+    # A constant or dictionary input reaches the reader with a selection vector
+    # whose entries are not 0..n; reading by row number instead of through it
+    # returns the wrong strings (or reads past the physical data).
+    Mutation(
+        name="the_selection_vector_is_ignored",
+        file=CAPI,
+        old=(
+            "                let idx = if v.sel.is_null() {\n"
+            "                    i\n"
+            "                } else {\n"
+            "                    *v.sel.add(i) as usize\n"
+            "                };"
+        ),
+        new="                let idx = i;",
+        expect_red="12_a_compressed_column",
+        kind="sql",
+    ),
     # A running offset that is not reset between chunks. Invisible over the five
     # rows every other output-shape assertion uses, because five rows are one
     # chunk; fatal across three.
     Mutation(
         name="the_list_offset_is_carried_across_chunks",
-        file=GLUE,
-        old="    let mut offset = 0usize;\n    for (row, entry) in rows.iter().enumerate() {",
+        file=CAPI,
+        old="    let mut offset = 0usize;\n    let entries = lengths",
         new=(
             "    static CARRIED: std::sync::atomic::AtomicUsize =\n"
             "        std::sync::atomic::AtomicUsize::new(0);\n"
-            "    let mut offset = CARRIED.load(std::sync::atomic::Ordering::Relaxed);\n"
-            "    CARRIED.store(offset + total, std::sync::atomic::Ordering::Relaxed);\n"
-            "    for (row, entry) in rows.iter().enumerate() {"
+            "    let mut offset = CARRIED.fetch_add(\n"
+            "        lengths.iter().flatten().sum::<usize>(),\n"
+            "        std::sync::atomic::Ordering::Relaxed,\n"
+            "    );\n"
+            "    let entries = lengths"
         ),
         expect_red="08_a_scan_wider_than_one_chunk",
         kind="sql",
@@ -1176,8 +1217,15 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="an_eighth_function_is_registered",
         file=GLUE,
-        old='    con.register_scalar_function::<Version>("subtoken_version")?;',
-        new='    con.register_scalar_function::<Version>("subtoken_version")?;\n    con.register_scalar_function::<Version>("subtoken_eighth")?;',
+        old='        .exec(version)\n        .register(r)?;',
+        new=(
+            '        .exec(version)\n'
+            '        .register(r)?;\n'
+            '    ScalarFunction::new("subtoken_eighth")\n'
+            '        .returns("VARCHAR")\n'
+            '        .exec(version)\n'
+            '        .register(r)?;'
+        ),
         expect_red="05_the_registered_surface",
         kind="sql",
     ),
@@ -1189,8 +1237,15 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="a_similarity_function_is_registered",
         file=GLUE,
-        old='    con.register_scalar_function::<ModelId>("subtoken_model_id")?;',
-        new='    con.register_scalar_function::<ModelId>("subtoken_model_id")?;\n    con.register_scalar_function::<ModelId>("subtoken_similar")?;',
+        old='        .exec(model_id)\n        .register(r)?;',
+        new=(
+            '        .exec(model_id)\n'
+            '        .register(r)?;\n'
+            '    ScalarFunction::new("subtoken_similar")\n'
+            '        .returns("VARCHAR")\n'
+            '        .exec(model_id)\n'
+            '        .register(r)?;'
+        ),
         expect_red="05_the_registered_surface",
         kind="sql",
     ),
@@ -1254,8 +1309,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_model_id_scalar_reports_the_version_sentence",
         file=GLUE,
-        old="        let text = CString::new(subtoken_core::model_id()?)?;",
-        new="        let text = CString::new(subtoken_core::describe())?;",
+        old="    call.write_varchar_constant(&subtoken_core::model_id()?)",
+        new="    call.write_varchar_constant(&subtoken_core::describe())",
         expect_red="11_a_stored_vector",
         kind="sql",
     ),
@@ -1273,8 +1328,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="the_catalogue_key_field_is_wired_to_the_revision",
         file=GLUE,
-        old="            (7, &row.key),",
-        new="            (7, row.revision),",
+        old="        (7, &row.key),",
+        new="        (7, row.revision),",
         expect_red="11_a_stored_vector",
         kind="sql",
     ),
@@ -1297,9 +1352,49 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="embed_returns_a_list_of_doubles_instead_of_floats",
         file=GLUE,
-        old="            LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Float)),",
-        new="            LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Double)),",
+        old='        .returns("FLOAT[]")',
+        new='        .returns("DOUBLE[]")',
         expect_red="01_scalar_composes",
+        kind="sql",
+    ),
+    # ── what duckdb_functions() says about each function ─────────────────────
+    Mutation(
+        name="a_function_registers_without_a_description",
+        file=GLUE,
+        old="        .returns(struct_type(MODEL_FIELDS))\n        .docs(&DOCS[4].1)\n",
+        new="        .returns(struct_type(MODEL_FIELDS))\n",
+        expect_red="13_each_function_describes_itself",
+        kind="sql",
+    ),
+    Mutation(
+        name="embed_parameter_loses_its_name",
+        file=GLUE,
+        old='    ScalarFunction::new("subtoken_embed")\n        .parameter("text", "VARCHAR")\n',
+        new='    ScalarFunction::new("subtoken_embed")\n        .parameter("", "VARCHAR")\n',
+        expect_red="13_each_function_describes_itself",
+        kind="sql",
+    ),
+    Mutation(
+        name="an_example_does_not_run",
+        file=GLUE,
+        old='            example: "subtoken_cache_clear()",',
+        new='            example: "subtoken_cache_clear(1)",',
+        kind="script",
+        command=[
+            "python3",
+            "scripts/check_documented_surface.py",
+            "--extension",
+            "build/subtoken.duckdb_extension",
+            "--duckdb",
+            "$DUCKDB",
+        ],
+    ),
+    Mutation(
+        name="a_category_is_dropped",
+        file=GLUE,
+        old='            category: "cache",\n        },\n    ),\n];',
+        new='            category: "",\n        },\n    ),\n];',
+        expect_red="13_each_function_describes_itself",
         kind="sql",
     ),
 ]

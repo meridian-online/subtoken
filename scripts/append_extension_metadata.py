@@ -13,7 +13,8 @@ Stdlib only, so `make test` needs no virtualenv.
     scripts/append_extension_metadata.py \\
         --library-file target/release/libsubtoken.dylib \\
         --out-file build/subtoken.duckdb_extension \\
-        --platform osx_arm64 --duckdb-version v1.2.0 --extension-version 0.1.0
+        --platform osx_arm64 --duckdb-version v2.0.0 --abi-type C_STRUCT_UNSTABLE \\
+        --extension-version 0.2.0
 """
 
 from __future__ import annotations

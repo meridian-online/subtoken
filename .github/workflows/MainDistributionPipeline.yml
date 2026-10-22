@@ -39,21 +39,27 @@ env:
   # `ci_tools_version` passed beside it are the pin, and that same script fails
   # when those two disagree. A third copy here would read like the pin while
   # controlling nothing, so there is not one.
-  DUCKDB_VERSION: v1.5.5
+  DUCKDB_VERSION: v2.0.0
 
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5-variegata
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera
     with:
-      duckdb_version: v1.5.5
-      ci_tools_version: v1.5-variegata
+      duckdb_version: v2.0.0
+      ci_tools_version: v2.0-cyanoptera
       extension_name: subtoken
       # The Rust toolchain builds the cdylib; python3 backs the metadata-stamp
       # venv that `make configure` creates.
       extra_toolchains: 'rust;python3'
       # Must equal description.yml's `excluded_platforms`.
       exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;linux_amd64_musl;linux_arm64_musl;windows_amd64_mingw'
+      # Must equal description.yml's `opt_in_platforms`.
+      opt_in_archs: 'osx_amd64'
+      # The reusable workflow's default, 'auto', skips "redundant" architectures
+      # on pull requests. The inspection jobs below download every platform's
+      # artifact and the registry builds all of them, so build them all here too.
+      reduced_ci_mode: 'disabled'
 
   # The no-network property was established against a locally built macOS
   # dylib. These are different binaries, from containers and runners this
@@ -87,11 +93,11 @@ jobs:
           - duckdb_arch: linux_amd64
             runner: ubuntu-24.04
             load: true
-            duckdb_asset: duckdb_cli-linux-amd64.zip
+            duckdb_asset: duckdb-cli-linux-amd64.tar.gz
           - duckdb_arch: linux_arm64
             runner: ubuntu-24.04-arm
             load: true
-            duckdb_asset: duckdb_cli-linux-arm64.zip
+            duckdb_asset: duckdb-cli-linux-arm64.tar.gz
           - duckdb_arch: osx_amd64
             runner: macos-15
             load: false
@@ -104,11 +110,11 @@ jobs:
           - duckdb_arch: osx_arm64
             runner: macos-15
             load: true
-            duckdb_asset: duckdb_cli-osx-arm64.zip
+            duckdb_asset: duckdb-cli-osx-arm64.tar.gz
           - duckdb_arch: windows_amd64
             runner: windows-latest
             load: true
-            duckdb_asset: duckdb_cli-windows-amd64.zip
+            duckdb_asset: duckdb-cli-windows-amd64.tar.gz
 
     steps:
       - uses: actions/checkout@v4
@@ -162,12 +168,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL --retry 5 -o duckdb_cli.zip \
+          curl -fsSL --retry 5 -o duckdb_cli.tar.gz \
             "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/${{ matrix.duckdb_asset }}"
-          # Python rather than unzip: it is already installed on all five
-          # runners and spells the same on Windows. It does not carry the
-          # executable bit across, which is why the next step sets it.
-          python -c "import zipfile; zipfile.ZipFile('duckdb_cli.zip').extractall('cli')"
+          # Python rather than tar: it is already installed on all five
+          # runners and spells the same on Windows. The next step still sets
+          # the executable bit, so it does not depend on the archive keeping it.
+          python -c "import tarfile; tarfile.open('duckdb_cli.tar.gz').extractall('cli', filter='data')"
 
       - name: It LOADs, and answers with a vector
         if: matrix.load
@@ -192,7 +198,7 @@ jobs:
           # `error()` raises, and the CLI exits non-zero when a statement
           # raises, so a wrong answer fails this step rather than printing.
           "$cli" -unsigned -init empty_init.sql -batch -noheader -list -c "
-            SET extension_directory='$extdir';
+            SET extension_directories=['$extdir'];
             LOAD '$artifact';
             SELECT subtoken_version();
             SELECT CASE

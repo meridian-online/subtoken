@@ -11,7 +11,7 @@ example that throws on paste therefore stays published until a person complains.
 
 WHAT THIS RUNS. Every example, in ONE DuckDB session, in the order the page
 presents them, against a packaged artifact. The session is given nothing the
-descriptor does not create for itself: the prelude is an `extension_directory`
+descriptor does not create for itself: the prelude is an `extension_directories` entry
 pointed at an empty temporary directory and a `LOAD` of the artifact, and that
 is all. A later example may use a table an earlier one created, because that is
 how someone reads a page; it may not use one nobody created.
@@ -77,7 +77,7 @@ INSPECTION_JOB = "no-network"
 MARKER = "SUBTOKEN_EXAMPLE"
 
 PRELUDE = """\
-SET extension_directory='{extension_directory}';
+SET extension_directories=['{extension_directory}'];
 LOAD '{extension}';
 """
 
@@ -173,7 +173,7 @@ def run_session(
         prelude = (
             PRELUDE.format(extension_directory=extension_directory, extension=extension)
             if extension is not None
-            else f"SET extension_directory='{extension_directory}';\n"
+            else f"SET extension_directories=['{extension_directory}'];\n"
         )
         completed = subprocess.run(
             [duckdb, "-unsigned", "-init", os.devnull, "-batch", "-box"],
@@ -199,7 +199,7 @@ def registered_functions(duckdb: str, extension: pathlib.Path) -> list[str]:
         sandbox = work / "home"
         sandbox.mkdir()
         script = (
-            f"SET extension_directory='{extension_directory}';\n"
+            f"SET extension_directories=['{extension_directory}'];\n"
             "CREATE TABLE before AS SELECT DISTINCT function_name FROM duckdb_functions();\n"
             f"LOAD '{extension}';\n"
             "SELECT function_name FROM (SELECT DISTINCT function_name FROM duckdb_functions()) "
@@ -611,6 +611,7 @@ docs:
             "name": "subtoken",
             "excluded_platforms": real_exclusions,
             "requires_toolchains": "rust;python3",
+            "opt_in_platforms": "osx_amd64",
         }
     }
     inspection = {
@@ -627,16 +628,17 @@ docs:
         }
     }
     agreeing = {
-        "env": {"DUCKDB_VERSION": "v1.5.5"},
+        "env": {"DUCKDB_VERSION": "v2.0.0"},
         "jobs": {
             "duckdb-stable-build": {
-                "uses": "duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5-variegata",
+                "uses": "duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera",
                 "with": {
                     "extension_name": "subtoken",
                     "exclude_archs": real_exclusions,
+                    "opt_in_archs": "osx_amd64",
                     "extra_toolchains": "rust;python3",
-                    "ci_tools_version": "v1.5-variegata",
-                    "duckdb_version": "v1.5.5",
+                    "ci_tools_version": "v2.0-cyanoptera",
+                    "duckdb_version": "v2.0.0",
                 },
             },
             "no-network": inspection,
@@ -650,8 +652,8 @@ docs:
         ("exclude_archs", "wasm_mvp", "excluded_platforms"),
         ("extra_toolchains", "rust", "requires_toolchains"),
         ("extension_name", "subtokend", "name"),
-        ("ci_tools_version", "v1.5.5", "ci_tools_version"),
-        ("duckdb_version", "v1.5.4", "DUCKDB_VERSION"),
+        ("ci_tools_version", "v2.0.0", "ci_tools_version"),
+        ("duckdb_version", "v2.0.1", "DUCKDB_VERSION"),
         ("opt_in_archs", "windows_arm64", "opt_in_platforms"),
     ):
         broken = copy.deepcopy(agreeing)
@@ -679,7 +681,7 @@ docs:
     if matrix_entries() is not None:
         expect(
             "the real exclusions build the five platforms the inspection job lists",
-            built_platforms(real_exclusions, "")
+            built_platforms(real_exclusions, "osx_amd64")
             == {"linux_amd64", "linux_arm64", "osx_amd64", "osx_arm64", "windows_amd64"},
         )
         expect(
@@ -738,8 +740,8 @@ docs:
     expect(
         "an env variable used by a step is not reported",
         dead_env_problems(
-            {"env": {"DUCKDB_VERSION": "v1.5.5"}},
-            "env:\n  DUCKDB_VERSION: v1.5.5\njobs:\n  x:\n    steps:\n"
+            {"env": {"DUCKDB_VERSION": "v2.0.0"}},
+            "env:\n  DUCKDB_VERSION: v2.0.0\njobs:\n  x:\n    steps:\n"
             "      - run: echo ${{ env.DUCKDB_VERSION }}\n",
         )
         == [],
@@ -749,19 +751,19 @@ docs:
         any(
             "CI_TOOLS_VERSION" in problem
             for problem in dead_env_problems(
-                {"env": {"CI_TOOLS_VERSION": "v1.5-variegata"}},
+                {"env": {"CI_TOOLS_VERSION": "v2.0-cyanoptera"}},
                 "env:\n  # Must equal the registry's CI_TOOLS_VERSION.\n"
-                "  CI_TOOLS_VERSION: v1.5-variegata\njobs: {}\n",
+                "  CI_TOOLS_VERSION: v2.0-cyanoptera\njobs: {}\n",
             )
         ),
     )
     expect(
         "a comment is not a use",
-        "#" not in without_comments("  DUCKDB_VERSION: v1.5.5  # and a comment"),
+        "#" not in without_comments("  DUCKDB_VERSION: v2.0.0  # and a comment"),
     )
     expect(
         "and stripping comments does not eat the declaration",
-        "DUCKDB_VERSION: v1.5.5" in without_comments("  DUCKDB_VERSION: v1.5.5  # a comment"),
+        "DUCKDB_VERSION: v2.0.0" in without_comments("  DUCKDB_VERSION: v2.0.0  # a comment"),
     )
 
     # And the runner itself. No extension needed: this proves that a failing
