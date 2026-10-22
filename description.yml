@@ -40,8 +40,9 @@ repo:
   # The registry builds `ref_next` against the next DuckDB release before it
   # ships; without it that build skips and passes having built nothing.
   ref_next: a0aa1d802ab3a6fdea67b4ec5453f6e916863bc0
-  # DuckDB 1.5.6 builds from `variegata`: the last commit that targeted the v1
-  # C API. A build from `ref` would not load on 1.5.
+  # DuckDB 1.5.6 builds from `variegata`: the commit the v1 build was already
+  # published from, which targets the v1 C API. A build from `ref` would not
+  # load on 1.5.
   variegata: 3bf95680e23ba6ad23951023bd65432f53877485
 
 docs:
@@ -92,7 +93,7 @@ docs:
 
     ## Requirements
 
-    The extension needs DuckDB 2.0.0 exactly. DuckDB 2.0 ships its v2 C API as unstable, so a build loads only on the DuckDB release it was built for; each DuckDB release gets a rebuild. If you are on DuckDB 1.5, `INSTALL subtoken FROM community` fetches the earlier build, which stays pinned to the last commit that targeted the v1 API.
+    The extension needs DuckDB 2.0.0 exactly. DuckDB 2.0 ships its v2 C API as unstable, so a build loads only on the DuckDB release it was built for; each DuckDB release gets a rebuild. If you are on DuckDB 1.5, `INSTALL subtoken FROM community` fetches the earlier build, which stays pinned to the v1 commit it was published from.
 
     `duckdb_functions()` describes each function, with real parameter names, a description, a runnable example and a category:
 
