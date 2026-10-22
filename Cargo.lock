@@ -1727,6 +1727,7 @@ dependencies = [
  "duckdb",
  "libduckdb-sys",
  "subtoken-core",
+ "subtoken-duckdb-sys",
 ]
 
 [[package]]

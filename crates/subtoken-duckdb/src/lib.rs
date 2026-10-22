@@ -66,6 +66,11 @@
 //! the question an analyst is actually asking. `subtoken_is_truncated(NULL)` is
 //! `NULL`, matching `subtoken_embed(NULL)`.
 
+// Nothing calls most of the v2 layer until the seven functions are ported onto
+// it; that wiring removes this allow.
+#[allow(dead_code)]
+mod capi;
+
 use std::error::Error;
 use std::ffi::CString;
 use std::sync::Arc;
