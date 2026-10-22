@@ -1,0 +1,10 @@
+[package]
+name = "subtoken-duckdb-sys"
+description = "DuckDB 2.0's unstable v2 C extension API: vendored headers and committed bindings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]

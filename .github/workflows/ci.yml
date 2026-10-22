@@ -18,6 +18,38 @@ env:
   DUCKDB_VERSION: v2.0.0
 
 jobs:
+  # The committed bindings must be exactly what the pinned bindgen writes from
+  # the vendored headers, on Linux as well as on a Mac, so a hand edit or a
+  # header bump without regeneration goes red.
+  bindings:
+    name: v2 bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install libclang
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev
+
+      # The version here is the one BINDGEN_VERSION pins in the script.
+      - name: Cache bindgen
+        id: bindgen-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/bindgen
+          key: bindgen-cli-0.73.2
+
+      - name: Install bindgen
+        if: steps.bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install bindgen-cli --locked --version 0.73.2
+
+      - name: Check the bindings
+        run: scripts/regenerate_v2_bindings.sh --check
+
   check:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

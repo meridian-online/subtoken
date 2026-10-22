@@ -1,0 +1,9 @@
+duckdb_v2.h and duckdb_extension_v2.h are vendored byte for byte from
+src/include/ in the DuckDB source repository (github.com/duckdb/duckdb).
+
+tag:    v2.0.0
+commit: d54cbbe3df17e8e5ce68312f483b4155836112aa
+date:   2026-10-21
+
+Refresh with `git show <tag>:src/include/<file>`, then run
+scripts/regenerate_v2_bindings.sh and commit the new bindings.rs with them.
