@@ -39,21 +39,23 @@ env:
   # `ci_tools_version` passed beside it are the pin, and that same script fails
   # when those two disagree. A third copy here would read like the pin while
   # controlling nothing, so there is not one.
-  DUCKDB_VERSION: v1.5.5
+  DUCKDB_VERSION: v2.0.0
 
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5-variegata
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera
     with:
-      duckdb_version: v1.5.5
-      ci_tools_version: v1.5-variegata
+      duckdb_version: v2.0.0
+      ci_tools_version: v2.0-cyanoptera
       extension_name: subtoken
       # The Rust toolchain builds the cdylib; python3 backs the metadata-stamp
       # venv that `make configure` creates.
       extra_toolchains: 'rust;python3'
       # Must equal description.yml's `excluded_platforms`.
       exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;linux_amd64_musl;linux_arm64_musl;windows_amd64_mingw'
+      # Must equal description.yml's `opt_in_platforms`.
+      opt_in_archs: 'osx_amd64'
 
   # The no-network property was established against a locally built macOS
   # dylib. These are different binaries, from containers and runners this

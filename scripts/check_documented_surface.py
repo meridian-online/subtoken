@@ -19,7 +19,7 @@ names in order. This loads the local build and compares.
 WHAT IS DERIVED (the source of truth)
     `duckdb_functions()` after `LOAD`, taken as the delta against a snapshot
     made before the load, so nothing built into the CLI is mistaken for ours.
-    `extension_directory` points at an empty temporary directory, so an
+    `extension_directories` points at an empty temporary directory, so an
     installed community build cannot be picked up instead.
 
 WHAT IS ASSERTED, for every scanned file
@@ -78,7 +78,7 @@ def catalog(duckdb: str, extension: pathlib.Path) -> dict[str, str]:
         extensions = work / "extensions"
         extensions.mkdir()
         script = f"""
-SET extension_directory='{extensions}';
+SET extension_directories=['{extensions}'];
 CREATE TABLE before AS SELECT DISTINCT function_name FROM duckdb_functions();
 LOAD '{extension}';
 SELECT function_name || chr(9) || return_type

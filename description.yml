@@ -24,8 +24,11 @@ extension:
   license: MIT
   # wasm: the artifact is a native cdylib and the bundled weights alone are 30 MB.
   # musl and windows_arm64 are opt-in in the distribution matrix and are not
-  # opted into. windows_amd64_mingw is excluded; windows_amd64 (MSVC) is not.
+  # opted into. osx_amd64 became opt-in in the DuckDB 2.0 matrix, and is opted
+  # into so Intel Macs keep a build. windows_amd64_mingw is excluded;
+  # windows_amd64 (MSVC) is not.
   excluded_platforms: "wasm_mvp;wasm_eh;wasm_threads;linux_amd64_musl;linux_arm64_musl;windows_amd64_mingw"
+  opt_in_platforms: "osx_amd64"
   # python3 backs the metadata-stamp venv the C-API build contract uses.
   requires_toolchains: "rust;python3"
   maintainers:

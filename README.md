@@ -181,7 +181,7 @@ What it costs is adaptivity: the values kept are the ones seen first in the sess
 
 ## Building it
 
-Needs a Rust toolchain, Python 3 for the packaging and test scripts, and the `duckdb` CLI for the SQL tests. `make check` also needs PyYAML, because it reads `description.yml` with a parser rather than a regex.
+Needs a Rust toolchain, Python 3 for the packaging and test scripts, and the `duckdb` CLI (v2.0.0) for the SQL tests. `make check` also needs PyYAML, because it reads `description.yml` with a parser rather than a regex.
 
 ```
 make check            # formatting, clippy, Rust tests, the artifact, the SQL tests, the registry entry
