@@ -10,17 +10,18 @@
 #
 # libclang: bindgen loads it at run time. On macOS it falls back to Xcode's
 # Command Line Tools (this script sets LIBCLANG_PATH there if unset). On Linux
-# (ubuntu-latest) the runner image ships LLVM; if bindgen cannot find
-# libclang, `sudo apt-get install -y $LIBCLANG_PACKAGE` provides it.
+# the script points LIBCLANG_PATH at /usr/lib/llvm-$LIBCLANG_MAJOR/lib when
+# that exists and the variable is unset, so a runner that ships several LLVM
+# versions cannot switch libclang under the check. CI installs
+# libclang-$LIBCLANG_MAJOR-dev, reading the major version from this file.
 #
 # Usage: scripts/regenerate_v2_bindings.sh [--check]
 set -euo pipefail
 
 BINDGEN_VERSION="0.73.2"
-# The libclang the CI job installs (ubuntu-24.04: libclang-18-dev). Kept here
-# beside the bindgen pin so both inputs to the output are named in one place;
-# ci.yml must match.
-LIBCLANG_PACKAGE="libclang-18-dev"
+# The libclang major version used on Linux. Kept beside the bindgen pin so both
+# inputs to the output are named, and enforced, in one place.
+LIBCLANG_MAJOR="18"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 crate="$root/crates/subtoken-duckdb-sys"
@@ -41,7 +42,9 @@ if [ "$have" != "$BINDGEN_VERSION" ]; then
   exit 1
 fi
 
-if [ -z "${LIBCLANG_PATH:-}" ] && [ -d /Library/Developer/CommandLineTools/usr/lib ]; then
+if [ -z "${LIBCLANG_PATH:-}" ] && [ -d "/usr/lib/llvm-$LIBCLANG_MAJOR/lib" ]; then
+  export LIBCLANG_PATH="/usr/lib/llvm-$LIBCLANG_MAJOR/lib"
+elif [ -z "${LIBCLANG_PATH:-}" ] && [ -d /Library/Developer/CommandLineTools/usr/lib ]; then
   export LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib
 fi
 

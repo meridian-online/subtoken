@@ -34,7 +34,10 @@ jobs:
           components: rustfmt
 
       - name: Install libclang
-        run: sudo apt-get update && sudo apt-get install -y libclang-18-dev
+        # The major version comes from the script, which also points bindgen at it.
+        run: |
+          major="$(sed -n 's/^LIBCLANG_MAJOR="\(.*\)"/\1/p' scripts/regenerate_v2_bindings.sh)"
+          sudo apt-get update && sudo apt-get install -y "libclang-${major}-dev"
 
       # The version here is the one BINDGEN_VERSION pins in the script.
       - name: Cache bindgen
