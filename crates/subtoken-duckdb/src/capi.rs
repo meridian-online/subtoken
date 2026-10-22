@@ -346,8 +346,9 @@ impl ScalarFunction {
 /// Frees the boxed `Exec` a function's user data points at.
 unsafe extern "C" fn drop_exec(data: *mut c_void) {
     // SAFETY: `data` is the `Box<Exec>` leaked in `configure_and_register`, and
-    // DuckDB calls this once. Dropping a `Box<fn>` cannot panic.
-    drop(unsafe { Box::from_raw(data.cast::<Exec>()) });
+    // DuckDB calls this once. Nothing here should panic, but no unwind may cross
+    // the boundary, so the body is guarded anyway.
+    let _ = catch_unwind(|| drop(unsafe { Box::from_raw(data.cast::<Exec>()) }));
 }
 
 /// The exec callback every registered function shares: it finds the
@@ -378,8 +379,10 @@ unsafe extern "C" fn exec_trampoline(
         exec(&mut call)
     }));
     if let Err(message) = result {
+        // `report` calls `api()`, which panics if `init` never ran, so it is
+        // guarded too; if it panics there is nothing left to report through.
         // SAFETY: DuckDB passes a live slot pointing at a live info.
-        unsafe { report(err, &message) };
+        let _ = catch_unwind(AssertUnwindSafe(|| unsafe { report(err, &message) }));
     }
 }
 
