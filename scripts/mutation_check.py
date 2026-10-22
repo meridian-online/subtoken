@@ -1160,9 +1160,6 @@ MUTATIONS: list[Mutation] = [
         expect_red="06_text_the_tokenizer",
         kind="sql",
     ),
-    # A running offset that is not reset between chunks. Invisible over the five
-    # rows every other output-shape assertion uses, because five rows are one
-    # chunk; fatal across three.
     Mutation(
         name="an_fsst_vector_is_viewed_without_being_flattened",
         file=CAPI,
@@ -1175,6 +1172,9 @@ MUTATIONS: list[Mutation] = [
         expect_red="12_a_compressed_column",
         kind="sql",
     ),
+    # A running offset that is not reset between chunks. Invisible over the five
+    # rows every other output-shape assertion uses, because five rows are one
+    # chunk; fatal across three.
     Mutation(
         name="the_list_offset_is_carried_across_chunks",
         file=CAPI,
@@ -1338,6 +1338,46 @@ MUTATIONS: list[Mutation] = [
         old='        .returns("FLOAT[]")',
         new='        .returns("DOUBLE[]")',
         expect_red="01_scalar_composes",
+        kind="sql",
+    ),
+    # ── what duckdb_functions() says about each function ─────────────────────
+    Mutation(
+        name="a_function_registers_without_a_description",
+        file=GLUE,
+        old="        .returns(struct_type(MODEL_FIELDS))\n        .docs(&DOCS[4].1)\n",
+        new="        .returns(struct_type(MODEL_FIELDS))\n",
+        expect_red="13_each_function_describes_itself",
+        kind="sql",
+    ),
+    Mutation(
+        name="embed_parameter_loses_its_name",
+        file=GLUE,
+        old='    ScalarFunction::new("subtoken_embed")\n        .parameter("text", "VARCHAR")\n',
+        new='    ScalarFunction::new("subtoken_embed")\n        .parameter("", "VARCHAR")\n',
+        expect_red="13_each_function_describes_itself",
+        kind="sql",
+    ),
+    Mutation(
+        name="an_example_does_not_run",
+        file=GLUE,
+        old='            example: "subtoken_cache_clear()",',
+        new='            example: "subtoken_cache_clear(1)",',
+        kind="script",
+        command=[
+            "python3",
+            "scripts/check_documented_surface.py",
+            "--extension",
+            "build/subtoken.duckdb_extension",
+            "--duckdb",
+            "$DUCKDB",
+        ],
+    ),
+    Mutation(
+        name="a_category_is_dropped",
+        file=GLUE,
+        old='            category: "cache",\n        },\n    ),\n];',
+        new='            category: "",\n        },\n    ),\n];',
+        expect_red="13_each_function_describes_itself",
         kind="sql",
     ),
 ]

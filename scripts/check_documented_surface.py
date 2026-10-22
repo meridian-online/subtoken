@@ -33,6 +33,13 @@ WHAT IS ASSERTED, for every scanned file
     4. The file is present and does write a function table. A scan that reports
        clean because it found nothing to read is not a scan.
 
+WHAT IS ASSERTED ABOUT THE DOCS
+    The `DOCS` table in `lib.rs` is the one place a function's description,
+    example and category are written. The catalog must report exactly those three
+    for every function, the table and the catalog must name the same functions,
+    and every example, run as `SELECT <example>;` in one session after `LOAD`,
+    must succeed. A failing example is reported by its text.
+
 WHAT IS NOT ASSERTED
     Behaviour. This says the docs describe the registered surface; whether that
     surface does anything is `test/sql/`.
@@ -59,8 +66,23 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 #: Files that write the surface out in prose and must agree with the catalog.
 SCANNED = ("README.md", "crates/subtoken-duckdb/src/lib.rs", "description.yml")
 
-#: A `STRUCT(...)` signature as the docs write it: field names, no types.
-DOCUMENTED_STRUCT = re.compile(r"STRUCT\(([^)]*)\)")
+#: A `STRUCT(...)` signature as the docs write it: field names, no types. DuckDB
+#: accepts a space before the parenthesis, so this does too.
+DOCUMENTED_STRUCT = re.compile(r"STRUCT\s*\(([^)]*)\)")
+
+#: One entry of the `DOCS` table in lib.rs: plain string literals, no escapes.
+DOCS_ENTRY = re.compile(
+    r'\(\s*"(subtoken_\w+)"\s*,\s*Docs\s*\{\s*'
+    r'description:\s*"([^"\\]*)"\s*,\s*'
+    r'example:\s*"([^"\\]*)"\s*,\s*'
+    r'category:\s*"([^"\\]*)"\s*,?\s*\}\s*,?\s*\)'
+)
+
+#: Separates the items of a list column in the catalog read.
+UNIT_SEPARATOR = "\x1f"
+
+#: What the catalog reports for a function: description, examples, categories.
+CatalogDocs = tuple[str, list[str], list[str]]
 
 #: A `STRUCT(...)` signature as DuckDB writes it: `name TYPE, name TYPE`.
 CATALOG_STRUCT = re.compile(r"^STRUCT\((.*)\)$", re.DOTALL)
@@ -71,8 +93,11 @@ CATALOG_STRUCT = re.compile(r"^STRUCT\((.*)\)$", re.DOTALL)
 DOCUMENTED_ROW = re.compile(r"^\s*(?://!\s*)?\|\s*`(\w+)\([^`]*\)`\s*\|\s*`([^`]+)`\s*\|")
 
 
-def catalog(duckdb: str, extension: pathlib.Path) -> dict[str, str]:
-    """Function name to return type, for the functions this extension registers."""
+def catalog(
+    duckdb: str, extension: pathlib.Path
+) -> tuple[dict[str, str], dict[str, CatalogDocs]]:
+    """What the loaded extension registers: return types, and descriptions with
+    examples and categories, each keyed by function name."""
     with tempfile.TemporaryDirectory() as workdir:
         work = pathlib.Path(workdir)
         extensions = work / "extensions"
@@ -81,8 +106,11 @@ def catalog(duckdb: str, extension: pathlib.Path) -> dict[str, str]:
 SET extension_directories=['{extensions}'];
 CREATE TABLE before AS SELECT DISTINCT function_name FROM duckdb_functions();
 LOAD '{extension}';
-SELECT function_name || chr(9) || return_type
-FROM (SELECT DISTINCT function_name, return_type FROM duckdb_functions()
+SELECT function_name || chr(9) || return_type || chr(9) || coalesce(description, '')
+       || chr(9) || array_to_string(examples, chr(31))
+       || chr(9) || array_to_string(categories, chr(31))
+FROM (SELECT DISTINCT function_name, return_type, description, examples, categories
+      FROM duckdb_functions()
       WHERE function_name NOT IN (SELECT function_name FROM before))
 ORDER BY function_name;
 """
@@ -98,14 +126,91 @@ ORDER BY function_name;
         raise SystemExit(f"reading the catalog failed:\n{completed.stdout}{completed.stderr}")
 
     found = {}
+    docs = {}
     for line in completed.stdout.splitlines():
         if "\t" not in line:
             continue
-        name, return_type = line.split("\t", 1)
+        name, return_type, description, examples, categories = line.split("\t", 4)
         found[name.strip()] = return_type.strip()
+        docs[name.strip()] = (
+            description,
+            [item for item in examples.split(UNIT_SEPARATOR) if item],
+            [item for item in categories.split(UNIT_SEPARATOR) if item],
+        )
     if not found:
         raise SystemExit("the catalog delta is empty; the extension registered nothing")
-    return found
+    return found, docs
+
+
+def docs_table(lib_rs: str) -> dict[str, tuple[str, str, str]]:
+    """Function name to (description, example, category), from `DOCS` in lib.rs."""
+    return {
+        name: (description, example, category)
+        for name, description, example, category in DOCS_ENTRY.findall(lib_rs)
+    }
+
+
+def docs_problems(
+    table: dict[str, tuple[str, str, str]], reported: dict[str, CatalogDocs]
+) -> list[str]:
+    """Every way the catalog's descriptions, examples and categories differ from the table."""
+    problems: list[str] = []
+    if not table:
+        problems.append(
+            "lib.rs writes no DOCS entry; the check that the catalog carries the table's text "
+            "would pass by comparing against nothing"
+        )
+    for name in sorted(set(table) - set(reported)):
+        problems.append(f"the DOCS table has {name}, which the catalog has not")
+    for name in sorted(set(reported) - set(table)):
+        problems.append(f"the catalog has {name}, which the DOCS table does not describe")
+    for name in sorted(set(table) & set(reported)):
+        description, example, category = table[name]
+        shown_description, shown_examples, shown_categories = reported[name]
+        if shown_description != description:
+            problems.append(
+                f"{name}: the catalog's description is `{shown_description}`, but DOCS says "
+                f"`{description}`"
+            )
+        if shown_examples != [example]:
+            problems.append(
+                f"{name}: the catalog's examples are {shown_examples}, but DOCS says [`{example}`]"
+            )
+        if shown_categories != [category]:
+            problems.append(
+                f"{name}: the catalog's categories are {shown_categories}, but DOCS says "
+                f"[`{category}`]"
+            )
+    return problems
+
+
+def example_problems(duckdb: str, extension: pathlib.Path | None, examples: list[str]) -> list[str]:
+    """Run `SELECT <example>;` for each example in one session; name the one that fails."""
+    with tempfile.TemporaryDirectory() as workdir:
+        work = pathlib.Path(workdir)
+        extensions = work / "extensions"
+        extensions.mkdir()
+        lines = [f"SET extension_directories=['{extensions}'];"]
+        if extension is not None:
+            lines.append(f"LOAD '{extension}';")
+        for index, example in enumerate(examples):
+            lines.append(f".print EXAMPLE {index}")
+            lines.append(f"SELECT {example};")
+        completed = subprocess.run(
+            [duckdb, "-unsigned", "-init", os.devnull, "-bail", "-batch", "-csv"],
+            input="\n".join(lines) + "\n",
+            text=True,
+            capture_output=True,
+            cwd=work,
+            check=False,
+        )
+    if completed.returncode == 0:
+        return []
+    started = re.findall(r"^EXAMPLE (\d+)$", completed.stdout, re.MULTILINE)
+    if not started:
+        return [f"loading the extension to run its examples failed:\n{completed.stdout}{completed.stderr}"]
+    failed = examples[int(started[-1])]
+    return [f"the example `{failed}` does not run: {completed.stderr.strip()}"]
 
 
 def catalog_struct_fields(return_type: str) -> list[str] | None:
@@ -152,6 +257,13 @@ def return_types_agree(written: str, reported: str) -> bool:
     return written.strip() == reported.strip()
 
 
+def doc_comment_lines(text: str) -> str:
+    """Only the `//!` and `///` lines of Rust source: the prose, not the code."""
+    return "\n".join(
+        line for line in text.splitlines() if line.lstrip().startswith(("//!", "///"))
+    )
+
+
 def file_problems(relative: str, text: str, registered: dict[str, str]) -> list[str]:
     """Everything a scanned file says about the surface that the catalog denies."""
     struct_fields = {
@@ -161,7 +273,10 @@ def file_problems(relative: str, text: str, registered: dict[str, str]) -> list[
     }
     problems: list[str] = []
 
-    for written in documented_struct_fields(text):
+    # In Rust source a STRUCT in code is a type being registered, not a signature
+    # being documented, so only the doc comments are read for one.
+    prose = doc_comment_lines(text) if relative.endswith(".rs") else text
+    for written in documented_struct_fields(prose):
         if not any(written == fields for fields in struct_fields.values()):
             problems.append(
                 f"{relative} writes STRUCT({', '.join(written)}), which matches no registered "
@@ -264,6 +379,65 @@ def self_test() -> int:
         print("self-test FAILED: a STRUCT compared equal to a scalar", file=sys.stderr)
         return 1
 
+    spaced = documented_struct_fields("STRUCT (hits, misses)")
+    if spaced != [["hits", "misses"]]:
+        print(f"self-test FAILED: a STRUCT with a space before its parenthesis gave {spaced}", file=sys.stderr)
+        return 1
+    code_and_prose = (
+        '//! returns `STRUCT(hits, misses)`\n'
+        'format!("STRUCT({})", fields.join(", "))\n'
+        'let t = "STRUCT (a, b)";\n'
+    )
+    code_problems = file_problems("lib.rs", code_and_prose + "//! | `f()` | `BIGINT` | x |\n",
+                                  {"f": "BIGINT", "g": "STRUCT(hits BIGINT, misses BIGINT)"})
+    if any("STRUCT(a, b)" in problem or "STRUCT({})" in problem for problem in code_problems):
+        print(f"self-test FAILED: STRUCT in code was read as documentation — {code_problems}", file=sys.stderr)
+        return 1
+
+    # The docs table against the catalog, each defect planted in turn.
+    table_text = (
+        'const DOCS: [(&str, Docs); 2] = [\n'
+        '    (\n        "subtoken_a",\n        Docs {\n            description: "Does a.",\n'
+        '            example: "subtoken_a()",\n            category: "x",\n        },\n    ),\n'
+        '    ("subtoken_b", Docs { description: "Does b.", example: "subtoken_b(1)", category: "y" }),\n'
+        '];\n'
+    )
+    table = docs_table(table_text)
+    if table != {"subtoken_a": ("Does a.", "subtoken_a()", "x"), "subtoken_b": ("Does b.", "subtoken_b(1)", "y")}:
+        print(f"self-test FAILED: the DOCS parser gave {table}", file=sys.stderr)
+        return 1
+    truth_docs = {
+        "subtoken_a": ("Does a.", ["subtoken_a()"], ["x"]),
+        "subtoken_b": ("Does b.", ["subtoken_b(1)"], ["y"]),
+    }
+    if docs_problems(table, truth_docs):
+        print(f"self-test FAILED: a matching table reported {docs_problems(table, truth_docs)}", file=sys.stderr)
+        return 1
+    differs = dict(truth_docs, subtoken_a=("Does something else.", ["subtoken_a()"], ["x"]))
+    missing = {name: table[name] for name in table if name != "subtoken_b"}
+    for label, found, needle in (
+        ("a description that differs is caught", docs_problems(table, differs), "description"),
+        ("an example that differs is caught", docs_problems(table, dict(truth_docs, subtoken_a=("Does a.", ["subtoken_a(2)"], ["x"]))), "examples"),
+        ("a category that differs is caught", docs_problems(table, dict(truth_docs, subtoken_a=("Does a.", ["subtoken_a()"], []))), "categories"),
+        ("a table missing a function is caught", docs_problems(missing, truth_docs), "does not describe"),
+        ("a catalog missing a function is caught", docs_problems(table, {"subtoken_a": truth_docs["subtoken_a"]}), "has not"),
+        ("an empty table is caught", docs_problems({}, truth_docs), "no DOCS entry"),
+    ):
+        if not any(needle in problem for problem in found):
+            print(f"self-test FAILED: {label} — got {found}", file=sys.stderr)
+            return 1
+
+    # An example that does not parse must be reported, by its text.
+    duckdb = shutil.which(os.environ.get("DUCKDB", "duckdb"))
+    if duckdb is not None:
+        broken = example_problems(duckdb, None, ["1 + 1", "subtoken_embed("])
+        if not any("`subtoken_embed(`" in problem for problem in broken):
+            print(f"self-test FAILED: an example that does not parse was reported as {broken}", file=sys.stderr)
+            return 1
+        if example_problems(duckdb, None, ["1 + 1"]):
+            print("self-test FAILED: an example that runs was reported", file=sys.stderr)
+            return 1
+
     # And the per-file comparison, each defect planted in turn.
     truth = {"subtoken_embed": "FLOAT[]", "subtoken_cache_stats": "STRUCT(hits BIGINT, misses BIGINT)"}
     good = (
@@ -333,7 +507,8 @@ def main() -> int:
         print(f"no packaged extension at {args.extension}; run `make extension`", file=sys.stderr)
         return 2
 
-    registered = catalog(duckdb, args.extension.resolve())
+    extension = args.extension.resolve()
+    registered, reported_docs = catalog(duckdb, extension)
 
     problems: list[str] = []
     rows_read = 0
@@ -350,6 +525,12 @@ def main() -> int:
         rows_read += len(documented_rows(text))
         problems += file_problems(relative, text, registered)
 
+    lib_rs = (REPO_ROOT / "crates/subtoken-duckdb/src/lib.rs").read_text()
+    table = docs_table(lib_rs)
+    problems += docs_problems(table, reported_docs)
+    examples = [example for _, example, _ in table.values()]
+    problems += example_problems(duckdb, extension, examples)
+
     if problems:
         print("FAIL: the documented surface disagrees with the loaded catalog:", file=sys.stderr)
         for problem in problems:
@@ -359,7 +540,8 @@ def main() -> int:
     print(
         f"ok: {len(registered)} registered functions, and the {rows_read} function-table rows "
         f"written across {len(SCANNED)} files — {', '.join(SCANNED)} — name them all, with the "
-        f"return types the loaded catalog reports"
+        f"return types the loaded catalog reports; the catalog carries the {len(table)} DOCS "
+        f"entries' description, example and category, and every example runs"
     )
     return 0
 

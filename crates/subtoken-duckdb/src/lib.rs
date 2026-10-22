@@ -91,7 +91,7 @@ mod capi;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
-use capi::{guard, Call, Registrar, ScalarFunction};
+use capi::{guard, Call, Docs, Registrar, ScalarFunction};
 use subtoken_duckdb_sys::duckdb_v2_extension_input;
 
 /// The exact DuckDB release this artifact is built for and declares in its
@@ -272,50 +272,118 @@ fn cache_clear(call: &mut Call) -> Result<(), String> {
 }
 
 /// SQL type text for a STRUCT with these fields, in this order. Field names
-/// are quoted, so `key` reads as a name rather than a keyword. The space after
-/// `STRUCT` is legal SQL, and keeps `scripts/check_documented_surface.py`, which
-/// reads the keyword followed directly by a parenthesis anywhere in this file
-/// as a documented signature, from reading the format string as one.
+/// are quoted, so `key` reads as a name rather than a keyword.
 fn struct_type<'a>(fields: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
     let fields: Vec<String> = fields
         .into_iter()
         .map(|(name, ty)| format!("\"{name}\" {ty}"))
         .collect();
-    format!("STRUCT ({})", fields.join(", "))
+    format!("STRUCT({})", fields.join(", "))
 }
+
+/// What `duckdb_functions()` reports for each function: its description, one
+/// example and one category. This table is the one place the text is written;
+/// registration reads it, and `scripts/check_documented_surface.py` compares the
+/// loaded catalog with it and runs every example.
+/// Each entry is plain literals, so that script can parse it.
+pub(crate) const DOCS: [(&str, Docs); 7] = [
+    (
+        "subtoken_embed",
+        Docs {
+            description: "Returns a unit-length FLOAT[] vector for text from the model bundled in the extension, with no network call; text with no in-vocabulary tokens (including '') gives the all-zero vector, and NULL gives NULL.",
+            example: "subtoken_embed('a quiet street near the river')",
+            category: "embedding",
+        },
+    ),
+    (
+        "subtoken_is_truncated",
+        Docs {
+            description: "Returns true when subtoken_embed(text) had to drop part of text to fit the model's input limits, so its vector does not reflect all of it.",
+            example: "subtoken_is_truncated(repeat('word ', 2000))",
+            category: "embedding",
+        },
+    ),
+    (
+        "subtoken_version",
+        Docs {
+            description: "Returns one line naming this build, the bundled model, its revision and the vector width.",
+            example: "subtoken_version()",
+            category: "metadata",
+        },
+    ),
+    (
+        "subtoken_model_id",
+        Docs {
+            description: "Returns the bundled model's full key; store it beside a vector column so a later session can refuse to compare vectors from a different model.",
+            example: "subtoken_model_id()",
+            category: "metadata",
+        },
+    ),
+    (
+        "subtoken_models",
+        Docs {
+            description: "Returns the catalogue row for the bundled model: name, backend, revision, width, input limit, licence, support tier and key.",
+            example: "subtoken_models().width",
+            category: "metadata",
+        },
+    ),
+    (
+        "subtoken_cache_stats",
+        Docs {
+            description: "Returns the embedding cache's counters since the last subtoken_cache_clear(): hits, misses, encoder runs, lookups too full to store, entries and capacity.",
+            example: "subtoken_cache_stats()",
+            category: "cache",
+        },
+    ),
+    (
+        "subtoken_cache_clear",
+        Docs {
+            description: "Drops every cached vector, resets the cache counters and returns how many vectors were dropped.",
+            example: "subtoken_cache_clear()",
+            category: "cache",
+        },
+    ),
+];
 
 /// Registers the whole surface.
 fn register_all(r: &Registrar) -> Result<(), String> {
     ScalarFunction::new("subtoken_embed")
         .parameter("text", "VARCHAR")
         .returns("FLOAT[]")
+        .docs(&DOCS[0].1)
         .exec(embed)
         .register(r)?;
     ScalarFunction::new("subtoken_is_truncated")
         .parameter("text", "VARCHAR")
         .returns("BOOLEAN")
+        .docs(&DOCS[1].1)
         .exec(is_truncated)
         .register(r)?;
     ScalarFunction::new("subtoken_version")
         .returns("VARCHAR")
+        .docs(&DOCS[2].1)
         .exec(version)
         .register(r)?;
     ScalarFunction::new("subtoken_model_id")
         .returns("VARCHAR")
+        .docs(&DOCS[3].1)
         .exec(model_id)
         .register(r)?;
     ScalarFunction::new("subtoken_models")
         .returns(struct_type(MODEL_FIELDS))
+        .docs(&DOCS[4].1)
         .exec(models)
         .register(r)?;
     ScalarFunction::new("subtoken_cache_stats")
         .returns(struct_type(STATS_FIELDS.map(|name| (name, "BIGINT"))))
         .volatile()
+        .docs(&DOCS[5].1)
         .exec(cache_stats)
         .register(r)?;
     ScalarFunction::new("subtoken_cache_clear")
         .returns("BIGINT")
         .volatile()
+        .docs(&DOCS[6].1)
         .exec(cache_clear)
         .register(r)?;
     Ok(())

@@ -76,7 +76,32 @@ SELECT must('the column is stored as a constant segment',
     (SELECT count(*) FROM pragma_storage_info('disk.c')
      WHERE segment_type = 'INTEGER' AND compression = 'Constant') > 0);
 
+SELECT must('the constant column reaches the function as a CONSTANT vector',
+    (SELECT count(*) FROM disk.c WHERE vector_type(CAST(c AS VARCHAR)) = 'CONSTANT_VECTOR') > 0);
+
 SELECT must('a CONSTANT input gives every row the same vector',
     (SELECT count(DISTINCT subtoken_embed(CAST(c AS VARCHAR))) FROM disk.c) = 1
     AND (SELECT count(*) FROM disk.c
          WHERE subtoken_embed(CAST(c AS VARCHAR)) IS DISTINCT FROM subtoken_embed('42')) = 0);
+
+-- DICT_FSST. DuckDB 2.0's own default storage format, which is what a user who
+-- attaches a database without asking for an older version gets. The file above
+-- is pinned to v1.2.0 to get plain FSST, so this one is attached with neither
+-- a storage version nor forced compression, and its vectors are compared with
+-- the in-memory ones exactly.
+ATTACH 'default_format.duckdb' AS dflt;
+
+CREATE TABLE dflt.d AS
+    SELECT 'value ' || (i % 300) AS s FROM range(5000) r(i);
+CHECKPOINT dflt;
+
+SELECT must('the default-format column is stored DICT_FSST',
+    (SELECT count(*) FROM pragma_storage_info('dflt.d') WHERE compression = 'DICT_FSST') > 0);
+
+CREATE TABLE dict_fsst_vectors AS
+    SELECT s, subtoken_embed(s) AS disk_vector FROM dflt.d;
+
+SELECT must('vectors from a DICT_FSST column match vectors from memory',
+    (SELECT count(*) FROM dict_fsst_vectors d JOIN memory_vectors m ON d.s = m.s
+     WHERE d.disk_vector IS DISTINCT FROM m.memory_vector) = 0
+    AND (SELECT count(*) FROM dict_fsst_vectors d JOIN memory_vectors m ON d.s = m.s) = 5000);
