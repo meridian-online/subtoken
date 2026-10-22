@@ -207,9 +207,6 @@ impl ScalarFunction {
         self
     }
 
-    // No function passes docs yet; the docs table that does lands next to the
-    // seven functions, and takes this allow with it.
-    #[allow(dead_code)]
     pub fn docs(mut self, docs: &'static Docs) -> Self {
         self.docs = Some(docs);
         self
