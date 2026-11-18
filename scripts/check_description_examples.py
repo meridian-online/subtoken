@@ -333,13 +333,19 @@ def inspection_coverage_problems(workflow: dict, inputs: dict, everyday: dict) -
 
     jobs = workflow.get("jobs") or {}
     found: dict[str, tuple[str, dict]] = {}
+    problems = []
     for job_name in (INSPECTION_JOB, TAG_INSPECTION_JOB):
         job = jobs.get(job_name) or {}
         include = ((job.get("strategy") or {}).get("matrix") or {}).get("include") or []
         for entry in include:
-            found[str(entry.get("duckdb_arch"))] = (job_name, entry)
+            arch = str(entry.get("duckdb_arch"))
+            if arch in found:
+                problems.append(
+                    f"{REHEARSAL.name} inspects {arch} in both `{found[arch][0]}` and "
+                    f"`{job_name}`; it belongs in one of them"
+                )
+            found[arch] = (job_name, entry)
 
-    problems = []
     for arch in sorted(built):
         expected_job = INSPECTION_JOB if arch in everyday_built else TAG_INSPECTION_JOB
         job_name, entry = found.get(arch, ("", {}))
@@ -380,6 +386,11 @@ def everyday_build_problems(workflow: dict, inputs: dict) -> list[str]:
     everyday build is otherwise the registry's build: the same reusable
     workflow at the same ref, the same inputs, and exclusions that add every
     macOS platform the tag builds and nothing else.
+
+    The `if:` conditions that keep each build to its events are not checked
+    here. Whether a pull request starts a macOS job is answered by the run on
+    that pull request, and a check that a condition reads as written would only
+    restate the file.
     """
     jobs = workflow.get("jobs") or {}
     job = jobs.get(EVERYDAY_BUILD_JOB) or {}
@@ -826,6 +837,15 @@ docs:
         expect(
             "a macOS platform inspected on every push is caught",
             any("but it belongs in `no-network-macos`" in problem for problem in rehearsal_problems(entry, misplaced)),
+        )
+
+        twice = copy.deepcopy(agreeing)
+        twice["jobs"]["no-network"]["strategy"]["matrix"]["include"].append(
+            copy.deepcopy(twice["jobs"]["no-network-macos"]["strategy"]["matrix"]["include"][-1])
+        )
+        expect(
+            "a platform inspected in both jobs is caught",
+            any("in both `no-network` and `no-network-macos`" in problem for problem in rehearsal_problems(entry, twice)),
         )
 
         tag_only = copy.deepcopy(agreeing)
