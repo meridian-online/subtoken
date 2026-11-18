@@ -54,6 +54,10 @@ jobs:
       - name: Check the bindings
         run: scripts/regenerate_v2_bindings.sh --check
 
+  # Linux only. GitHub's free plan runs a few macOS jobs at a time across the
+  # whole organisation and every run queues behind them, so macOS is checked on
+  # the Macs development happens on, and only a release tag's distribution run
+  # uses a GitHub-hosted Mac.
   check:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -63,8 +67,6 @@ jobs:
         include:
           - os: ubuntu-latest
             duckdb_asset: duckdb-cli-linux-amd64.tar.gz
-          - os: macos-latest
-            duckdb_asset: duckdb-cli-osx-arm64.tar.gz
 
     steps:
       # `submodules` for extension-ci-tools: the descriptor check validates
@@ -204,19 +206,17 @@ jobs:
   # rather than only when the full distribution matrix runs. `make configure`
   # and `make release` are the targets the registry invokes; the checks after
   # them are run against the artifact THAT recipe produced, not the one `make
-  # extension` produces, and `--compare` fails if the two stop agreeing.
+  # extension` produces, and `--compare` fails if the two stop agreeing. Linux
+  # only, for the reason the job above gives.
   community-recipe:
     name: the registry's recipe on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
             duckdb_asset: duckdb-cli-linux-amd64.tar.gz
-          - os: macos-latest
-            duckdb_asset: duckdb-cli-osx-arm64.tar.gz
 
     steps:
       - uses: actions/checkout@v4

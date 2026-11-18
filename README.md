@@ -215,7 +215,7 @@ The extension loads on exactly one DuckDB release, so each release is a small ch
 3. Set `API_VERSION` in `crates/subtoken-duckdb-sys/src/lib.rs`.
 4. Set `MIN_DUCKDB_VERSION` in `crates/subtoken-duckdb/src/lib.rs`.
 5. Set `TARGET_DUCKDB_VERSION` in the `Makefile`.
-6. Set `DUCKDB_VERSION` in `.github/workflows/ci.yml`, and both `DUCKDB_VERSION` and `duckdb_version` in `.github/workflows/MainDistributionPipeline.yml`. If extension-ci-tools has a new branch for the release, move all three of its pins together: the `uses:` ref and `ci_tools_version` in `MainDistributionPipeline.yml`, and the `extension-ci-tools` submodule. Then `git grep -n 'v2\.0\.0' -- ':!crates/subtoken-duckdb-sys/vendor' ':!crates/subtoken-duckdb-sys/src/bindings.rs'` to catch any other copy.
+6. Set `DUCKDB_VERSION` in `.github/workflows/ci.yml`, and `DUCKDB_VERSION` and both build jobs' `duckdb_version` in `.github/workflows/MainDistributionPipeline.yml`. If extension-ci-tools has a new branch for the release, move all of its pins together: both build jobs' `uses:` ref and `ci_tools_version` in `MainDistributionPipeline.yml`, and the `extension-ci-tools` submodule. Then `git grep -n 'v2\.0\.0' -- ':!crates/subtoken-duckdb-sys/vendor' ':!crates/subtoken-duckdb-sys/src/bindings.rs'` to catch any other copy.
 7. Update the "DuckDB 2.0.0 exactly" text in `README.md` and `description.yml`.
 8. After the change is merged, change the registry entry in `duckdb/community-extensions`.
 
@@ -232,7 +232,7 @@ LOAD 'build/subtoken.duckdb_extension';
 
 Early. The extension builds, loads and answers queries, and it is in the DuckDB community registry: `INSTALL subtoken FROM community; LOAD subtoken;` works on a stock `duckdb` with no flag. Build it yourself with `make extension` to work on it or to try a change.
 
-`description.yml` at the root of this repository is the registry entry; the registry keeps its copy at `extensions/subtoken/description.yml` in [duckdb/community-extensions](https://github.com/duckdb/community-extensions), and `.github/workflows/MainDistributionPipeline.yml` runs the same build the registry runs.
+`description.yml` at the root of this repository is the registry entry; the registry keeps its copy at `extensions/subtoken/description.yml` in [duckdb/community-extensions](https://github.com/duckdb/community-extensions), and `.github/workflows/MainDistributionPipeline.yml` runs the same build the registry runs. A release tag runs all of it; a push or a pull request runs it without the macOS platforms, which are checked on the Macs this extension is developed on rather than on GitHub's shared macOS runners.
 
 ## The model
 
