@@ -340,9 +340,12 @@ def inspection_coverage_problems(workflow: dict, inputs: dict, everyday: dict) -
         for entry in include:
             arch = str(entry.get("duckdb_arch"))
             if arch in found:
+                first = found[arch][0]
                 problems.append(
-                    f"{REHEARSAL.name} inspects {arch} in both `{found[arch][0]}` and "
-                    f"`{job_name}`; it belongs in one of them"
+                    f"{REHEARSAL.name}'s `{job_name}` lists {arch} twice"
+                    if first == job_name
+                    else f"{REHEARSAL.name} inspects {arch} in both `{first}` and `{job_name}`; "
+                    f"it belongs in one of them"
                 )
             found[arch] = (job_name, entry)
 
@@ -846,6 +849,15 @@ docs:
         expect(
             "a platform inspected in both jobs is caught",
             any("in both `no-network` and `no-network-macos`" in problem for problem in rehearsal_problems(entry, twice)),
+        )
+
+        repeated = copy.deepcopy(agreeing)
+        repeated["jobs"]["no-network"]["strategy"]["matrix"]["include"].append(
+            copy.deepcopy(repeated["jobs"]["no-network"]["strategy"]["matrix"]["include"][0])
+        )
+        expect(
+            "a platform listed twice in one job is caught",
+            any("`no-network` lists linux_amd64 twice" in problem for problem in rehearsal_problems(entry, repeated)),
         )
 
         tag_only = copy.deepcopy(agreeing)
