@@ -37,7 +37,7 @@ function table against `duckdb_functions()` of the loaded artifact — derived
 from the build rather than from a list written here, so registering a sixth
 function reddens this until the page mentions it.
 
-It also holds the distribution workflow's inspection job to the platforms that
+It also holds the distribution workflow's inspection jobs to the platforms that
 workflow builds: an arch that survives the exclusions and opt-ins has to have an
 entry there, and that entry has to load the artifact or say what stops it.
 Reading a binary's trailer and its imports is not running it, and an artifact
@@ -70,9 +70,16 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DESCRIPTION = REPO_ROOT / "description.yml"
 MATRIX = REPO_ROOT / "extension-ci-tools" / "config" / "distribution_matrix.json"
 REHEARSAL = REPO_ROOT / ".github" / "workflows" / "MainDistributionPipeline.yml"
+#: The registry's own build, run on a release tag. Its inputs are the ones held
+#: equal to description.yml.
 BUILD_JOB = "duckdb-stable-build"
-#: The job that downloads every uploaded artifact and looks at it.
+#: The build a push or a pull request runs: the tag's build with every macOS
+#: platform excluded, so no run but a release tag waits for a GitHub-hosted Mac.
+EVERYDAY_BUILD_JOB = "duckdb-everyday-build"
+#: The job that downloads and looks at every artifact the everyday build makes.
 INSPECTION_JOB = "no-network"
+#: The job that looks at the artifacts only the tag's build makes.
+TAG_INSPECTION_JOB = "no-network-macos"
 
 MARKER = "SUBTOKEN_EXAMPLE"
 
@@ -296,50 +303,118 @@ def dead_env_problems(workflow: dict, text: str) -> list[str]:
     return problems
 
 
-def inspection_coverage_problems(workflow: dict, inputs: dict) -> list[str]:
+def inspection_coverage_problems(workflow: dict, inputs: dict, everyday: dict) -> list[str]:
     """Every artifact this configuration uploads has to be looked at, and loaded or excused.
 
     The platform list is derived from the distribution matrix and the build
     job's own exclusions rather than read from a list written here, so opting a
     platform in — or upstream adding one — cannot quietly produce an artifact
-    with no entry in the inspection job. Each entry either carries `load: true`,
+    with no entry in an inspection job. Each entry either carries `load: true`,
     meaning the job runs the binary, or `load_skipped_because:` naming what
     stops it; a platform that is merely read and never run without saying so is
     the gap this closes.
+
+    There are two inspection jobs because there are two builds. `no-network`
+    runs on every event, so it may list only what the everyday build makes, or
+    its download would find nothing on a pull request. `no-network-macos` runs
+    on a release tag alone and lists what only the tag's build makes. Each
+    platform the tag builds belongs to exactly one of them.
     """
     built = built_platforms(
         str(inputs.get("exclude_archs", "")), str(inputs.get("opt_in_archs", ""))
     )
-    if built is None:
+    everyday_built = built_platforms(
+        str(everyday.get("exclude_archs", "")), str(everyday.get("opt_in_archs", ""))
+    )
+    if built is None or everyday_built is None:
         # The matrix is absent. `descriptor_problems` reports that once, rather
         # than every derived check reporting it again or going quiet.
         return []
 
-    job = (workflow.get("jobs") or {}).get(INSPECTION_JOB) or {}
-    include = ((job.get("strategy") or {}).get("matrix") or {}).get("include") or []
-    by_arch = {str(entry.get("duckdb_arch")): entry for entry in include}
+    jobs = workflow.get("jobs") or {}
+    found: dict[str, tuple[str, dict]] = {}
+    for job_name in (INSPECTION_JOB, TAG_INSPECTION_JOB):
+        job = jobs.get(job_name) or {}
+        include = ((job.get("strategy") or {}).get("matrix") or {}).get("include") or []
+        for entry in include:
+            found[str(entry.get("duckdb_arch"))] = (job_name, entry)
 
     problems = []
     for arch in sorted(built):
-        entry = by_arch.get(arch)
-        if entry is None:
+        expected_job = INSPECTION_JOB if arch in everyday_built else TAG_INSPECTION_JOB
+        job_name, entry = found.get(arch, ("", {}))
+        if not job_name:
             problems.append(
-                f"{REHEARSAL.name} builds and uploads {arch}, but its `{INSPECTION_JOB}` job "
+                f"{REHEARSAL.name} builds and uploads {arch}, but its `{expected_job}` job "
                 f"has no entry for it — that artifact would be published with nothing having "
                 f"looked at it"
             )
+        elif job_name != expected_job:
+            problems.append(
+                f"{REHEARSAL.name} inspects {arch} in `{job_name}`, but it belongs in "
+                f"`{expected_job}`: `{INSPECTION_JOB}` runs on every push and pull request and "
+                f"may list only what `{EVERYDAY_BUILD_JOB}` builds, and `{TAG_INSPECTION_JOB}` "
+                f"lists what only the release tag builds"
+            )
         elif entry.get("load") is not True and not str(entry.get("load_skipped_because", "")).strip():
             problems.append(
-                f"{REHEARSAL.name}'s `{INSPECTION_JOB}` entry for {arch} neither loads the "
+                f"{REHEARSAL.name}'s `{job_name}` entry for {arch} neither loads the "
                 f"artifact nor says why not — give it `load: true`, or a "
                 f"`load_skipped_because:` naming what stops it"
             )
-    for arch in sorted(by_arch):
+    for arch in sorted(found):
         if arch not in built:
             problems.append(
-                f"{REHEARSAL.name}'s `{INSPECTION_JOB}` job has an entry for {arch}, which this "
+                f"{REHEARSAL.name}'s `{found[arch][0]}` job has an entry for {arch}, which this "
                 f"configuration does not build — the download step would find no artifact"
             )
+    return problems
+
+
+def everyday_build_problems(workflow: dict, inputs: dict) -> list[str]:
+    """The build a push or pull request runs is the tag's build without macOS.
+
+    GitHub's free plan runs few macOS jobs at a time across the organisation and
+    every run queues behind them, so only a release tag builds the macOS
+    artifacts; macOS is checked on the Macs development happens on. The
+    everyday build is otherwise the registry's build: the same reusable
+    workflow at the same ref, the same inputs, and exclusions that add every
+    macOS platform the tag builds and nothing else.
+    """
+    jobs = workflow.get("jobs") or {}
+    job = jobs.get(EVERYDAY_BUILD_JOB) or {}
+    everyday = job.get("with") or {}
+    if not everyday:
+        return [f"{REHEARSAL.name} has no `{EVERYDAY_BUILD_JOB}` job with inputs to compare"]
+
+    problems = []
+    if str(job.get("uses", "")) != str((jobs.get(BUILD_JOB) or {}).get("uses", "")):
+        problems.append(
+            f"{REHEARSAL.name}'s `{EVERYDAY_BUILD_JOB}` calls {job.get('uses')!r}, not the "
+            f"reusable workflow `{BUILD_JOB}` calls"
+        )
+    for key in sorted((set(inputs) | set(everyday)) - {"exclude_archs"}):
+        if str(inputs.get(key)) != str(everyday.get(key)):
+            problems.append(
+                f"{REHEARSAL.name}'s `{EVERYDAY_BUILD_JOB}` passes {key} {everyday.get(key)!r} "
+                f"but `{BUILD_JOB}` passes {inputs.get(key)!r} — a pull request would rehearse "
+                f"a different build from the one a tag runs"
+            )
+
+    tag_excluded = str(inputs.get("exclude_archs", ""))
+    built = built_platforms(tag_excluded, str(inputs.get("opt_in_archs", "")))
+    if built is None:
+        return problems
+    expected = set(filter(None, tag_excluded.split(";"))) | {
+        arch for arch in built if arch.startswith("osx_")
+    }
+    actual = set(filter(None, str(everyday.get("exclude_archs", "")).split(";")))
+    if actual != expected:
+        problems.append(
+            f"{REHEARSAL.name}'s `{EVERYDAY_BUILD_JOB}` excludes {sorted(actual)}, but it has to "
+            f"exclude exactly what `{BUILD_JOB}` excludes plus every macOS platform that job "
+            f"builds, {sorted(expected)}"
+        )
     return problems
 
 
@@ -411,7 +486,10 @@ def rehearsal_problems(descriptor: dict, workflow: dict | None) -> list[str]:
             f"jobs download are built from the first and produced by the second"
         )
 
-    problems += inspection_coverage_problems(workflow, inputs)
+    problems += everyday_build_problems(workflow, inputs)
+    everyday = ((workflow.get("jobs") or {}).get(EVERYDAY_BUILD_JOB) or {}).get("with") or {}
+    if everyday:
+        problems += inspection_coverage_problems(workflow, inputs, everyday)
 
     return problems
 
@@ -631,29 +709,41 @@ docs:
                 "include": [
                     {"duckdb_arch": "linux_amd64", "load": True},
                     {"duckdb_arch": "linux_arm64", "load": True},
-                    {"duckdb_arch": "osx_amd64", "load": False, "load_skipped_because": "no Intel runner"},
-                    {"duckdb_arch": "osx_arm64", "load": True},
                     {"duckdb_arch": "windows_amd64", "load": True},
                 ]
             }
         }
     }
+    tag_inspection = {
+        "strategy": {
+            "matrix": {
+                "include": [
+                    {"duckdb_arch": "osx_amd64", "load": False, "load_skipped_because": "no Intel runner"},
+                    {"duckdb_arch": "osx_arm64", "load": True},
+                ]
+            }
+        }
+    }
+    rehearsal_inputs = {
+        "extension_name": "subtoken",
+        "exclude_archs": real_exclusions,
+        "opt_in_archs": "osx_amd64",
+        "extra_toolchains": "rust;python3",
+        "ci_tools_version": "v2.0-cyanoptera",
+        "duckdb_version": "v2.0.0",
+        "reduced_ci_mode": "disabled",
+    }
+    reusable = "duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera"
     agreeing = {
         "env": {"DUCKDB_VERSION": "v2.0.0"},
         "jobs": {
-            "duckdb-stable-build": {
-                "uses": "duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera",
-                "with": {
-                    "extension_name": "subtoken",
-                    "exclude_archs": real_exclusions,
-                    "opt_in_archs": "osx_amd64",
-                    "extra_toolchains": "rust;python3",
-                    "ci_tools_version": "v2.0-cyanoptera",
-                    "duckdb_version": "v2.0.0",
-                    "reduced_ci_mode": "disabled",
-                },
+            "duckdb-stable-build": {"uses": reusable, "with": dict(rehearsal_inputs)},
+            "duckdb-everyday-build": {
+                "uses": reusable,
+                "with": {**rehearsal_inputs, "exclude_archs": real_exclusions + ";osx_amd64;osx_arm64"},
             },
             "no-network": inspection,
+            "no-network-macos": tag_inspection,
         },
     }
     expect("an agreeing rehearsal reports nothing", rehearsal_problems(entry, agreeing) == [])
@@ -688,6 +778,64 @@ docs:
         "a rehearsal with no build job is caught",
         any("no `duckdb-stable-build` job" in problem for problem in rehearsal_problems(entry, missing)),
     )
+
+    no_everyday = copy.deepcopy(agreeing)
+    del no_everyday["jobs"]["duckdb-everyday-build"]
+    expect(
+        "a rehearsal with no everyday build is caught",
+        any("no `duckdb-everyday-build` job" in problem for problem in rehearsal_problems(entry, no_everyday)),
+    )
+
+    drifted = copy.deepcopy(agreeing)
+    drifted["jobs"]["duckdb-everyday-build"]["with"]["extra_toolchains"] = "rust"
+    expect(
+        "an everyday build whose other inputs drift from the tag's is caught",
+        any("passes extra_toolchains 'rust'" in problem for problem in rehearsal_problems(entry, drifted)),
+    )
+
+    elsewhere = copy.deepcopy(agreeing)
+    elsewhere["jobs"]["duckdb-everyday-build"]["uses"] = reusable.replace("@v2.0-cyanoptera", "@main")
+    expect(
+        "an everyday build calling another reusable workflow is caught",
+        any("not the reusable workflow" in problem for problem in rehearsal_problems(entry, elsewhere)),
+    )
+
+    # The added check is what keeps the macOS legs off a pull request, so it
+    # is disagreed with in both directions.
+    if matrix_entries() is not None:
+        with_mac = copy.deepcopy(agreeing)
+        with_mac["jobs"]["duckdb-everyday-build"]["with"]["exclude_archs"] = real_exclusions + ";osx_amd64"
+        expect(
+            "an everyday build that still builds a macOS platform is caught",
+            any("plus every macOS platform" in problem for problem in rehearsal_problems(entry, with_mac)),
+        )
+
+        too_few = copy.deepcopy(agreeing)
+        too_few["jobs"]["duckdb-everyday-build"]["with"]["exclude_archs"] = (
+            real_exclusions + ";osx_amd64;osx_arm64;linux_arm64"
+        )
+        expect(
+            "an everyday build that also drops a Linux platform is caught",
+            any("plus every macOS platform" in problem for problem in rehearsal_problems(entry, too_few)),
+        )
+
+        misplaced = copy.deepcopy(agreeing)
+        misplaced["jobs"]["no-network"]["strategy"]["matrix"]["include"].append(
+            misplaced["jobs"]["no-network-macos"]["strategy"]["matrix"]["include"].pop()
+        )
+        expect(
+            "a macOS platform inspected on every push is caught",
+            any("but it belongs in `no-network-macos`" in problem for problem in rehearsal_problems(entry, misplaced)),
+        )
+
+        tag_only = copy.deepcopy(agreeing)
+        tag_only["jobs"]["no-network-macos"]["strategy"]["matrix"]["include"].append(
+            tag_only["jobs"]["no-network"]["strategy"]["matrix"]["include"].pop()
+        )
+        expect(
+            "a platform every push builds but only a tag inspects is caught",
+            any("but it belongs in `no-network`" in problem for problem in rehearsal_problems(entry, tag_only)),
+        )
 
     # An absent workflow file. This returned [] until 2026-08-25, so moving the
     # file aside left the whole comparison reporting "ok".

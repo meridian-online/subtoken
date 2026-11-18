@@ -41,9 +41,16 @@ env:
   # controlling nothing, so there is not one.
   DUCKDB_VERSION: v2.0.0
 
+# Only a release tag builds the macOS platforms. GitHub's free plan runs a few
+# macOS jobs at a time across the whole organisation, and every run queues
+# behind them, so a push or a pull request builds the same thing with the macOS
+# platforms excluded, and macOS is checked on the Macs development happens on.
+# The tag's build is the registry's; scripts/check_description_examples.py holds
+# the everyday build to it, differing only by those exclusions.
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
+    if: startsWith(github.ref, 'refs/tags/')
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera
     with:
       duckdb_version: v2.0.0
@@ -59,6 +66,20 @@ jobs:
       # The reusable workflow's default, 'auto', skips "redundant" architectures
       # on pull requests. The inspection jobs below download every platform's
       # artifact and the registry builds all of them, so build them all here too.
+      reduced_ci_mode: 'disabled'
+
+  duckdb-everyday-build:
+    name: Build extension binaries, macOS excluded
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera
+    with:
+      duckdb_version: v2.0.0
+      ci_tools_version: v2.0-cyanoptera
+      extension_name: subtoken
+      extra_toolchains: 'rust;python3'
+      # The tag's exclusions plus osx_amd64 and osx_arm64.
+      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;linux_amd64_musl;linux_arm64_musl;windows_amd64_mingw;osx_amd64;osx_arm64'
+      opt_in_archs: 'osx_amd64'
       reduced_ci_mode: 'disabled'
 
   # The no-network property was established against a locally built macOS
@@ -82,9 +103,15 @@ jobs:
   # entry that neither loads the artifact nor says what stops it. So a platform
   # added to the build cannot arrive uninspected, and the one that cannot be
   # loaded is a declared exception rather than a silence.
+  #
+  # This job runs on every event and inspects what both builds make; the macOS
+  # artifacts, which only a tag builds, are inspected by `no-network-macos`
+  # with the same steps. Exactly one of the two builds runs, so the other is
+  # skipped, and a skipped need would skip this job without the `if`.
   no-network:
     name: the ${{ matrix.duckdb_arch }} artifact a stranger would download
-    needs: duckdb-stable-build
+    needs: [duckdb-stable-build, duckdb-everyday-build]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -98,25 +125,12 @@ jobs:
             runner: ubuntu-24.04-arm
             load: true
             duckdb_asset: duckdb-cli-linux-arm64.tar.gz
-          - duckdb_arch: osx_amd64
-            runner: macos-15
-            load: false
-            load_skipped_because: >-
-              the artifact is x86_64, cross-built on the arm64 macos-15 runner the
-              distribution matrix itself names for osx_amd64, and GitHub offers no
-              Intel macOS runner to execute it on. Its trailer, its imports and its
-              exported symbols are read here; whether it LOADs is answered by the
-              first person to install it on an Intel Mac.
-          - duckdb_arch: osx_arm64
-            runner: macos-15
-            load: true
-            duckdb_asset: duckdb-cli-osx-arm64.tar.gz
           - duckdb_arch: windows_amd64
             runner: windows-latest
             load: true
             duckdb_asset: duckdb-cli-windows-amd64.tar.gz
 
-    steps:
+    steps: &inspection_steps
       - uses: actions/checkout@v4
 
       # `cargo tree --workspace --edges normal` is the third of the three
@@ -223,3 +237,27 @@ jobs:
           print(f"raw      {len(raw):>12,} bytes  ({len(raw)/2**20:.1f} MiB)")
           print(f"served   {served:>12,} bytes  ({served/2**20:.1f} MiB)  gzip, as the registry uploads it")
           EOF
+
+  no-network-macos:
+    name: the ${{ matrix.duckdb_arch }} artifact a stranger would download
+    needs: duckdb-stable-build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - duckdb_arch: osx_amd64
+            runner: macos-15
+            load: false
+            load_skipped_because: >-
+              the artifact is x86_64, cross-built on the arm64 macos-15 runner the
+              distribution matrix itself names for osx_amd64, and GitHub offers no
+              Intel macOS runner to execute it on. Its trailer, its imports and its
+              exported symbols are read here; whether it LOADs is answered by the
+              first person to install it on an Intel Mac.
+          - duckdb_arch: osx_arm64
+            runner: macos-15
+            load: true
+            duckdb_asset: duckdb-cli-osx-arm64.tar.gz
+
+    steps: *inspection_steps
